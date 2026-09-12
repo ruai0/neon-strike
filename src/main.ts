@@ -59,7 +59,7 @@ const net = new Net();
 
 // ---------- 渲染器 / 场景 ----------
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
