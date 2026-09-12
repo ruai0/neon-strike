@@ -706,6 +706,60 @@ kbd {
 .armory-xp b { color: var(--amber); font-size: 20px; text-shadow: 0 0 10px rgba(255, 179, 0, 0.5); }
 .armory-row { width: 420px; }
 
+/* 主菜单分区标签 */
+.menu-section-label {
+  margin-top: 22px; font-family: var(--font-display); letter-spacing: 4px;
+  font-size: 12px; color: rgba(0, 240, 255, 0.55); text-transform: uppercase;
+}
+
+/* 仓库 / 挑战面板 */
+.vault-head {
+  font-family: var(--font-display); font-size: 15px; letter-spacing: 2px;
+  color: rgba(207, 233, 239, 0.8); margin-bottom: 6px;
+}
+.vault-head b { color: var(--amber); font-size: 20px; text-shadow: 0 0 10px rgba(255, 179, 0, 0.5); }
+.vault-sec {
+  margin-top: 16px; font-family: var(--font-display); letter-spacing: 3px;
+  font-size: 13px; color: var(--cyan);
+  border-left: 2px solid var(--cyan); padding-left: 10px;
+}
+.vault-list { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.vault-row.done { opacity: 0.7; }
+.vault-row .si-price.ok { color: var(--cyan); }
+.mini-btn {
+  background: var(--amber); color: #0a0e16; border: none; cursor: pointer;
+  font-family: var(--font-display); font-size: 13px; padding: 6px 12px; letter-spacing: 1px;
+  pointer-events: auto;
+}
+.mini-btn:hover { box-shadow: 0 0 12px rgba(255, 179, 0, 0.6); }
+.vault-affix {
+  background: var(--panel); border: 1px solid rgba(0, 240, 255, 0.2);
+  border-left: 2px solid var(--cyan); padding: 10px 14px;
+  width: 460px; max-width: 92vw;
+}
+.va-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.va-head .si-sub { color: var(--amber); }
+.va-chips, .vault-loadout { display: flex; flex-wrap: wrap; gap: 8px; }
+.va-lv { margin-top: 6px; font-size: 12px; color: rgba(207, 233, 239, 0.55); display: flex; align-items: center; gap: 8px; }
+.affix-chip, .lv-chip, .loadout-chip {
+  background: rgba(0, 240, 255, 0.06); border: 1px solid rgba(0, 240, 255, 0.3);
+  color: #cfe9ef; cursor: pointer; pointer-events: auto;
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 1px;
+  padding: 6px 12px; transition: all 0.13s;
+}
+.affix-chip:hover, .lv-chip:hover, .loadout-chip:hover { border-color: var(--cyan); color: #fff; }
+.affix-chip.on, .lv-chip.on, .loadout-chip.on {
+  background: var(--amber); color: #0a0e16; border-color: var(--amber);
+  box-shadow: 0 0 12px rgba(255, 179, 0, 0.5);
+}
+.mast-chip {
+  background: rgba(0, 240, 255, 0.04); border: 1px solid rgba(0, 240, 255, 0.15);
+  color: rgba(207, 233, 239, 0.4); cursor: default;
+  font-family: var(--font-display); font-size: 11px; letter-spacing: 1px;
+  padding: 4px 10px;
+}
+.mast-chip.on { color: var(--amber); border-color: rgba(255, 179, 0, 0.3); }
+
 /* 设置面板 */
 .setting-row {
   display: flex; align-items: center; gap: 18px;

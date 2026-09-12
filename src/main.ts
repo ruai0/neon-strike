@@ -895,10 +895,11 @@ function rollAffix(): Affix | null {
   return Math.random() < 0.65 ? keys[Math.floor(Math.random() * keys.length)] : null;
 }
 function critRoll() {
-  return Math.random() < stats.critChance + (weaponAffix[weapon] === 'deadly' ? 0.1 : 0);
+  const bonus = weaponAffix[weapon] === 'deadly' ? 0.1 + 0.05 * (affixLv(weapon) - 1) : 0;
+  return Math.random() < stats.critChance + bonus;
 }
 
-const magOf = (w: WeaponId) => Math.round(WEAPONS[w].mag * stats.magMul * (weaponAffix[w] === 'expanded' ? 1.3 : 1));
+const magOf = (w: WeaponId) => Math.round(WEAPONS[w].mag * stats.magMul * (weaponAffix[w] === 'expanded' ? 1 + 0.3 * affixLv(w) : 1));
 
 interface CardEntry { u: Upgrade; mult: number; cls: string; rname: string; cursed: boolean; }
 let currentPicks: CardEntry[] = [];
@@ -1022,12 +1023,15 @@ function drawUpgradeCards() {
   redrawCards();
   renderShop();
   $('upgrade-title').textContent = `WAVE ${String(wave).padStart(2, '0')} 清除 — 整备阶段`;
+  const rerollCost = Math.max(5, 30 - metaLv('reroll') * 5);
+  $('btn-reroll').textContent = `↻ 换一批（${rerollCost}◆）`;
   $('upgrades').classList.remove('hidden');
 }
 
 $('btn-reroll').addEventListener('click', () => {
-  if (coins < 30) { sfx.empty(); return; }
-  coins -= 30;
+  const rerollCost = Math.max(5, 30 - metaLv('reroll') * 5);
+  if (coins < rerollCost) { sfx.empty(); return; }
+  coins -= rerollCost;
   updateCoinsUI();
   redrawCards();
   renderShop();
@@ -1314,8 +1318,9 @@ function updateCoins(dt: number) {
     c.mesh.position.addScaledVector(c.vel, dt);
     c.mesh.rotation.y += dt * 6;
     if (d < 1.1 && !myDead) {
-      coins += 5;
-      ltk.coins += 5;
+      coins += 5 + metaLoot;
+      runEarned += 5 + metaLoot;
+      ltk.coins += 5 + metaLoot;
       trackContract('coins', 5);
       sfx.hit();
       updateCoinsUI();
@@ -1549,6 +1554,49 @@ function renderArmory() {
 $('btn-armory').addEventListener('click', renderArmory);
 $('btn-daily').addEventListener('click', () => { sfx.init(); startDailyRun(); });
 
+// ---------- 永久仓库（跨局金币 / 武器解锁 / 词缀锻造 / 出战装配 / 元升级 / 武器精通） ----------
+interface VaultAffix { a: Affix; lv: number; }
+interface Vault {
+  coins: number;
+  weapons: WeaponId[];
+  affix: Record<string, VaultAffix | null>;
+  loadout: WeaponId | null;
+  mastery: Partial<Record<WeaponId, number>>; // 永久武器精通（0-3）
+  meta: Record<string, number>;               // 元升级等级（按 key）
+}
+let vault: Vault = (() => {
+  const def: Vault = { coins: 0, weapons: [], affix: {}, loadout: null, mastery: {}, meta: {} };
+  try { return { ...def, ...(JSON.parse(localStorage.getItem('ns-vault') ?? '{}') as Partial<Vault>) }; }
+  catch { return def; }
+})();
+function saveVault() { localStorage.setItem('ns-vault', JSON.stringify(vault)); }
+let runEarned = 0; // 本局累计获得（结算时存入仓库）
+let forgeLevel = 1; // 仓库锻造时选择的词缀等级（1-3）
+let metaLoot = 0;   // 元升级「财富积累」带来的额外金币（每枚）
+
+// 元升级树：花仓库金币买永久被动
+interface MetaDef { key: string; name: string; desc: string; max: number; cost: (lv: number) => number; }
+const META_DEFS: MetaDef[] = [
+  { key: 'shield', name: '钢铁护盾', desc: '起始护盾上限 +10/级', max: 5, cost: (l) => 200 + l * 120 },
+  { key: 'pay',    name: '军火补贴', desc: '起始金币 +40/级',     max: 5, cost: (l) => 200 + l * 120 },
+  { key: 'dmg',    name: '杀伤强化', desc: '全武器伤害 +4%/级',   max: 5, cost: (l) => 240 + l * 140 },
+  { key: 'wealth', name: '财富积累', desc: '每枚金币掉落 +2/级',  max: 5, cost: (l) => 200 + l * 120 },
+  { key: 'forge',  name: '锻造大师', desc: '词缀锻造花费 -10%/级', max: 3, cost: (l) => 300 + l * 150 },
+  { key: 'reroll', name: '整备专家', desc: '三选一换批 -5◆/级',  max: 3, cost: (l) => 300 + l * 150 },
+];
+function metaLv(k: string): number { return vault.meta[k] ?? 0; }
+
+// 出战前选择的挑战（每局可改，不持久化）
+let pendingChallenge = { mods: [] as string[], diff: 0 };
+let challengeMods: string[] = [];   // 本局生效的协议
+let challengeDiff = 0;              // 本局难度档位
+
+// 词缀强度等级：局内捡到临时词缀=1级；与仓库锻造的词缀同类型时，享受锻造等级
+function affixLv(w: WeaponId): number {
+  const pa = vault.affix[w];
+  return pa && weaponAffix[w] === pa.a ? pa.lv : 1;
+}
+
 // ---------- 设置（灵敏度 / 音量，持久化） ----------
 const settings = JSON.parse(localStorage.getItem('ns-settings') ?? '{"sens":1,"vol":1}') as { sens: number; vol: number };
 function saveSettings() { localStorage.setItem('ns-settings', JSON.stringify(settings)); }
@@ -1584,6 +1632,138 @@ function renderSettings() {
   $('achv').classList.remove('hidden');
 }
 $('btn-settings').addEventListener('click', () => { sfx.init(); sfx.setVolume(settings.vol); sfx.startMusic(); renderSettings(); });
+$('btn-vault').addEventListener('click', () => { sfx.init(); renderVault(); });
+$('btn-challenge').addEventListener('click', () => { sfx.init(); renderChallenge(); });
+
+// ---------- 仓库 / 军备（永久经济：解锁武器 · 词缀锻造 · 出战装配） ----------
+function renderVault() {
+  const body = $('achv-body');
+  $('achv-title').textContent = '仓库 · 军备';
+  const avail = ['rifle', ...vault.weapons] as WeaponId[];
+  const forgeCost = Math.max(30, Math.round(150 * forgeLevel * (1 - 0.1 * metaLv('forge'))));
+
+  // ① 武器解锁
+  const unlockRows = ALL_WEAPONS.filter((w) => w !== 'rifle').map((w) => {
+    const unlocked = vault.weapons.includes(w);
+    const price = WEAPON_PRICES[w] ?? 200;
+    return `<div class="shop-item vault-row${unlocked ? ' done' : vault.coins >= price ? '' : ' off'}">
+      <span class="si-name">${WEAPONS[w].name}</span>
+      <span class="si-sub">${unlocked ? '已永久解锁' : '解锁后可装配出战'}</span>
+      ${unlocked ? '<b class="si-price ok">✓</b>' : `<button class="mini-btn" data-act="unlock" data-w="${w}">${price}◆</button>`}
+    </div>`;
+  }).join('');
+
+  // ② 词缀锻造
+  const affixRows = avail.map((w) => {
+    const pa = vault.affix[w];
+    const cur = pa ? `${AFFIX_INFO[pa.a].name} Lv.${pa.lv}` : '无';
+    const chips = (Object.keys(AFFIX_INFO) as Affix[]).map((a) =>
+      `<button class="affix-chip${pa?.a === a ? ' on' : ''}" data-act="forge" data-w="${w}" data-a="${a}">${AFFIX_INFO[a].name.replace('的', '')}</button>`,
+    ).join('');
+    const lvSel = [1, 2, 3].map((l) => `<button class="lv-chip${forgeLevel === l ? ' on' : ''}" data-act="lv" data-l="${l}">Lv.${l}</button>`).join('');
+    return `<div class="vault-affix">
+      <div class="va-head"><span class="si-name">${WEAPONS[w].name}</span><span class="si-sub">当前 ${cur}</span></div>
+      <div class="va-chips">${chips}</div>
+      <div class="va-lv">锻造等级 ${lvSel}</div>
+    </div>`;
+  }).join('');
+
+  // ③ 出战装配
+  const loadout = avail.map((w) =>
+    `<button class="loadout-chip${vault.loadout === w ? ' on' : ''}" data-act="equip" data-w="${w}">${WEAPONS[w].name}</button>`,
+  ).join('');
+
+  // ④ 永久武器精通（结算沉淀，下局开局携带）
+  const mastDisplay = ALL_WEAPONS.map((w) => {
+    const mlv = vault.mastery[w] ?? 0;
+    return `<span class="mast-chip${mlv > 0 ? ' on' : ''}">${WEAPONS[w].name} ${'Ⅰ'.repeat(mlv) || '—'}</span>`;
+  }).join('');
+
+  // ⑤ 元升级树
+  const metaRows = META_DEFS.map((m) => {
+    const lv = metaLv(m.key);
+    const maxed = lv >= m.max;
+    const cost = m.cost(lv);
+    return `<div class="shop-item vault-row${maxed || vault.coins < cost ? ' off' : ''}">
+      <span class="si-name">${m.name}<i>${'◆'.repeat(lv)}${'◇'.repeat(m.max - lv)}</i></span>
+      <span class="si-sub">${m.desc}</span>
+      ${maxed ? '<b class="si-price ok">MAX</b>' : `<button class="mini-btn" data-act="meta" data-k="${m.key}">${cost}◆</button>`}
+    </div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="vault-head">仓库金币 <b>${vault.coins}</b>◆ · 本局待入库 <b>${runEarned}</b>◆</div>
+    <div class="vault-sec">① 武器解锁（永久）</div>
+    <div class="vault-list">${unlockRows}</div>
+    <div class="vault-sec">② 词缀锻造（先选等级，再点词缀 · 当前 Lv.${forgeLevel} 花费 ${forgeCost}◆）</div>
+    <div class="vault-list">${affixRows}</div>
+    <div class="vault-sec">③ 出战装配（开局携带）</div>
+    <div class="vault-loadout">${loadout}</div>
+    <div class="vault-sec">④ 永久武器精通（局内练级，结算自动沉淀）</div>
+    <div class="vault-loadout">${mastDisplay}</div>
+    <div class="vault-sec">⑤ 元升级树（花仓库金币买永久被动）</div>
+    <div class="vault-list">${metaRows}</div>
+    <div class="hint" style="margin-top:10px">装配武器/锻造词缀/元升级/武器精通 均为永久养成；局内军火商仍提供临时加成，互不冲突。</div>`;
+  body.querySelectorAll<HTMLElement>('[data-act]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const act = el.dataset.act!;
+      if (act === 'lv') { forgeLevel = Number(el.dataset.l); renderVault(); return; }
+      if (act === 'unlock') {
+        const w = el.dataset.w as WeaponId; const price = WEAPON_PRICES[w] ?? 200;
+        if (vault.coins < price) { sfx.empty(); return; }
+        vault.coins -= price; vault.weapons.push(w); saveVault(); sfx.pickup(); refreshMenuMeta(); renderVault(); return;
+      }
+      if (act === 'forge') {
+        const w = el.dataset.w as WeaponId; const a = el.dataset.a as Affix;
+        if (vault.coins < forgeCost) { sfx.empty(); return; }
+        vault.coins -= forgeCost; vault.affix[w] = { a, lv: forgeLevel }; saveVault(); sfx.pickup(); refreshMenuMeta(); renderVault(); return;
+      }
+      if (act === 'equip') {
+        const w = el.dataset.w as WeaponId;
+        vault.loadout = vault.loadout === w ? null : w; saveVault(); sfx.pickup(); renderVault(); return;
+      }
+      if (act === 'meta') {
+        const k = el.dataset.k!;
+        const m = META_DEFS.find((d) => d.key === k)!;
+        const lv = metaLv(k);
+        if (lv >= m.max) { sfx.empty(); return; }
+        const cost = m.cost(lv);
+        if (vault.coins < cost) { sfx.empty(); return; }
+        vault.coins -= cost; vault.meta[k] = lv + 1; saveVault(); sfx.pickup(); refreshMenuMeta(); renderVault(); return;
+      }
+    });
+  });
+  $('achv').classList.remove('hidden');
+}
+
+// ---------- 挑战模式（协议 + 难度，单机开局生效） ----------
+function renderChallenge() {
+  const body = $('achv-body');
+  $('achv-title').textContent = '挑战模式';
+  const modBtns = WAVE_MODS.map((m) =>
+    `<button class="loadout-chip${pendingChallenge.mods.includes(m.id) ? ' on' : ''}" data-mod="${m.id}">${m.label}</button>`,
+  ).join('');
+  const diffBtns = [
+    { d: 0, t: '普通' }, { d: 1, t: '精英 · 敌血/速 +35%' }, { d: 2, t: '噩梦 · 敌血/速 +70%' },
+  ].map((x) => `<button class="loadout-chip${pendingChallenge.diff === x.d ? ' on' : ''}" data-diff="${x.d}">${x.t}</button>`).join('');
+  body.innerHTML = `
+    <div class="vault-head">挑战协议 · 选择后每波生效 · 仅单机</div>
+    <div class="vault-sec">变异协议（可多选）</div>
+    <div class="vault-loadout">${modBtns}</div>
+    <div class="vault-sec">难度档位</div>
+    <div class="vault-loadout">${diffBtns}</div>
+    <div class="hint" style="margin-top:10px">从主菜单「单机训练」开局即套用；每日挑战与联机不套用。</div>`;
+  body.querySelectorAll<HTMLElement>('[data-mod]').forEach((el) => el.addEventListener('click', () => {
+    const id = el.dataset.mod!;
+    const i = pendingChallenge.mods.indexOf(id);
+    if (i >= 0) pendingChallenge.mods.splice(i, 1); else pendingChallenge.mods.push(id);
+    sfx.pickup(); renderChallenge();
+  }));
+  body.querySelectorAll<HTMLElement>('[data-diff]').forEach((el) => el.addEventListener('click', () => {
+    pendingChallenge.diff = Number(el.dataset.diff); sfx.pickup(); renderChallenge();
+  }));
+  $('achv').classList.remove('hidden');
+}
 
 function checkAchievements() {
   for (const a of ACH_DEFS) {
@@ -1635,6 +1815,7 @@ $('menu-best').textContent = String(best);
 function refreshMenuMeta() {
   $('menu-rank').textContent = `Lv.${getRank()}`;
   $('menu-xp').textContent = String(xp);
+  $('menu-vault').textContent = String(vault.coins);
   refreshDailyButton();
 }
 refreshMenuMeta();
@@ -1963,6 +2144,11 @@ function resetLocalRun() {
   stats.maxHp += perks.armor * 8;
   stats.dmgMul += perks.fire * 0.05;
   GRENADE.cdMax = Math.max(4, 8 * (1 - 0.08 * perks.tactic));
+  // 仓库元升级（永久被动，必须在 resetStats 之后、hp 赋值之前应用）
+  coins += metaLv('pay') * 40;
+  metaLoot = metaLv('wealth') * 2;
+  stats.maxHp += metaLv('shield') * 10;
+  stats.dmgMul += metaLv('dmg') * 0.04;
   for (const c of coinsE) scene.remove(c.mesh);
   coinsE = [];
   rollContracts();
@@ -1975,7 +2161,19 @@ function resetLocalRun() {
     weaponLv[w] = 0;
     weaponAffix[w] = null;
   }
+  // 永久武器精通：开局即携带仓库中沉淀的武器等级
+  for (const w of ALL_WEAPONS) weaponLv[w] = Math.min(3, vault.mastery[w] ?? 0);
   ammo = ammoPool.rifle;
+  // 出战装配：仓库已解锁并选定的武器，开局直接携带（含锻造词缀）
+  if (vault.loadout && vault.weapons.includes(vault.loadout)) {
+    const w = vault.loadout;
+    if (!owned.includes(w)) owned.push(w);
+    weaponAffix[w] = vault.affix[w] ? vault.affix[w]!.a : null;
+    ammoPool[w] = magOf(w);
+    weapon = w;
+    ammo = ammoPool[w];
+    showWeaponModel(w);
+  }
   reloading = 0;
   firing = false; aiming = false; myDead = false; respawnTimer = 0;
   dashCd = 0; dashTime = 0; shake = 0;
@@ -1995,6 +2193,10 @@ function startGame(m: Mode, map?: number) {
   dailyActive = pendingDaily && m === 'solo';
   pendingDaily = false;
   mode = m;
+  // 挑战协议仅单机生效（每日/联机不套用）
+  const useChallenge = m === 'solo' && !dailyActive;
+  challengeMods = useChallenge ? pendingChallenge.mods.slice() : [];
+  challengeDiff = useChallenge ? pendingChallenge.diff : 0;
   clearWorld();
   resetLocalRun();
   buildMap(m === 'solo' ? Math.floor(Math.random() * 3) : (map ?? 0));
@@ -2060,6 +2262,15 @@ function gameOver(board?: { name: string; score: number; kills: number }[], titl
   ltk.bestWave = Math.max(ltk.bestWave, wave);
   ltk.runs++;
   saveLtk();
+  // 本局金币入库（永久仓库）
+  vault.coins += runEarned;
+  const banked = runEarned;
+  runEarned = 0;
+  // 武器精通沉淀：把本局练到的武器等级写入仓库（取历史最高）
+  for (const w of ALL_WEAPONS) {
+    if (weaponLv[w] > 0) vault.mastery[w] = Math.max(vault.mastery[w] ?? 0, weaponLv[w]);
+  }
+  saveVault();
   commitXp();
   refreshMenuMeta();
   if (dailyActive) {
@@ -2075,6 +2286,7 @@ function gameOver(board?: { name: string; score: number; kills: number }[], titl
   $('go-wave').textContent = String(wave);
   $('go-kills').textContent = String(kills);
   $('go-best').textContent = String(best);
+  $('go-vault').textContent = `+${banked}◆`;
   $('btn-retry').textContent = mode === 'pvp' ? '再来一局' : '重新部署';
   $('btn-go-leave').classList.toggle('hidden', mode === 'solo');
   const elBoard = $('go-board');
@@ -2130,7 +2342,11 @@ function startWave(n: number) {
   eventFired = false;
   eventAt = 7 + Math.random() * 10;
   // 波次变异（第2波起 50% 概率）
-  waveMod = n >= 2 && Math.random() < 0.5 ? WAVE_MODS[Math.floor(Math.random() * WAVE_MODS.length)] : null;
+  waveMod = n >= 2
+    ? (challengeMods.length
+        ? WAVE_MODS.find((m) => m.id === challengeMods[(n - 2) % challengeMods.length])!
+        : (Math.random() < 0.5 ? WAVE_MODS[Math.floor(Math.random() * WAVE_MODS.length)] : null))
+    : null;
   if (waveMod?.id === 'horde') for (let i = 0; i < 3; i++) queue.push('swarm');
   if (dailyHas('dswarm')) for (let i = 0; i < 2; i++) queue.push('swarm');
   const isBoss = n % 5 === 0;
@@ -2159,11 +2375,14 @@ function spawnEnemyLocal(kind: EnemyKind) {
   const r = 24 + Math.random() * 9;
   const pos = new THREE.Vector3(Math.cos(ang) * r, KIND_CFG[kind].r + 1, Math.sin(ang) * r);
   spawnBeam(pos, KIND_CFG[kind].color);
-  const speedBoost = (waveMod?.id === 'swift' ? 1.25 : 1) * (dailyHas('dfast') ? 1.2 : 1);
+  const chSwift = challengeMods.includes('swift');
+  const chArmor = challengeMods.includes('armor');
+  const speedBoost = (waveMod?.id === 'swift' || chSwift ? 1.25 : 1) * (dailyHas('dfast') ? 1.2 : 1) * (1 + 0.2 * challengeDiff);
   const enemy = new Enemy(kind, (KIND_CFG[kind].speed + (kind === 'drone' || kind === 'swarm' ? wave * 0.12 : 0)) * speedBoost, pos);
-  if (waveMod?.id === 'armor') {
+  if (waveMod?.id === 'armor' || chArmor) {
     enemy.hp = KIND_CFG[kind].hp * 1.3;
   }
+  if (challengeDiff > 0) { const m = 1 + 0.35 * challengeDiff; enemy.maxHp *= m; enemy.hp *= m; }
   // 精英词缀（第5波起 15%，BOSS 除外）
   if (wave >= 5 && kind !== 'boss' && Math.random() < 0.15) {
     const keys = Object.keys(ENEMY_AFFIX) as EnemyAffix[];
@@ -2220,7 +2439,8 @@ function pickupWeapon(w: WeaponId) {
     toast(`${aff}${aff ? '·' : ''}${WEAPONS[w].name} 熟练度提升 → ${'I'.repeat(weaponLv[w])}（伤害 +15%）`);
   } else {
     ammoPool[w] = magOf(w);
-    coins += 30;
+    coins += 30 + metaLoot * 6;
+    runEarned += 30 + metaLoot * 6;
     updateCoinsUI();
     toast(`${WEAPONS[w].name} 已满熟练 · 弹药补满 +30◆`);
   }

@@ -97,6 +97,7 @@ export const ENEMY_AFFIX: Record<EnemyAffix, { name: string; color: number }> = 
 export class Enemy {
   group = new THREE.Group();
   hp = 0;
+  maxHp = 0;
   alive = true;
   hitCooldown = 0;
   fireTimer = 1.2;
@@ -128,6 +129,7 @@ export class Enemy {
   constructor(public kind: EnemyKind, public speed: number, spawnPos: THREE.Vector3) {
     const cfg = KIND_CFG[kind];
     this.hp = cfg.hp;
+    this.maxHp = cfg.hp;
     // 自发光亮色实体（黑底可见）× 专属暗纹贴图 + 暗色描边：亮体剪影 + 纹理细节
     const tint = new THREE.Color(cfg.color).multiplyScalar(0.82);
     const bodyMat = () => {
@@ -219,7 +221,6 @@ export class Enemy {
   }
 
   get position() { return this.group.position; }
-  get maxHp() { return KIND_CFG[this.kind].hp; }
 
   setHp01(ratio: number) {
     const r = Math.max(0, Math.min(1, ratio));

@@ -78,7 +78,7 @@
       <div class="title-glitch" data-text="NEON STRIKE">NEON STRIKE</div>
       <div class="subtitle">// 霓虹突袭 — 竞技场协议 v3.0</div>
       <div class="menu-stats">
-        <div>军衔 <b id="menu-rank">Lv.1</b> · 最高纪录 <b id="menu-best">0</b> · 累计 <b id="menu-xp" style="font-size:14px">0</b></div>
+        <div>军衔 <b id="menu-rank">Lv.1</b> · 最高纪录 <b id="menu-best">0</b> · 仓库 <b id="menu-vault">0</b>◆ · 累计 <b id="menu-xp" style="font-size:14px">0</b></div>
       </div>
       <div class="menu-row">
         <input id="player-name" maxlength="12" placeholder="输入代号" autocomplete="off" spellcheck="false" />
@@ -105,11 +105,16 @@
         <div><kbd>ESC</kbd> 暂停</div>
       </div>
       <div class="hint">九种强化 · 九种武器 · 六种敌机 · 每 5 波 BOSS · 单机/联机共战无尽波次</div>
+      <div class="menu-section-label">战术终端</div>
+      <div class="menu-tabs">
+        <button id="btn-armory" class="btn-ghost" style="margin-top:0">🛒 军械库</button>
+        <button id="btn-vault" class="btn-ghost" style="margin-top:0">🎒 仓库·军备</button>
+        <button id="btn-challenge" class="btn-ghost" style="margin-top:0">⚔ 挑战模式</button>
+      </div>
       <div class="menu-tabs">
         <button id="btn-daily" class="btn-ghost" style="margin-top:0">📅 每日挑战</button>
         <button id="btn-ach" class="btn-ghost" style="margin-top:0">🏅 成就</button>
         <button id="btn-stats" class="btn-ghost" style="margin-top:0">📊 战绩</button>
-        <button id="btn-armory" class="btn-ghost" style="margin-top:0">🛒 军械库</button>
         <button id="btn-settings" class="btn-ghost" style="margin-top:0">⚙ 设置</button>
       </div>
       <div class="hint dim" id="mp-hint">联机地址：加载中…</div>
@@ -212,6 +217,7 @@
       <div class="go-item"><span>最终得分</span><b id="go-score">0</b></div>
       <div class="go-item"><span>抵达波次</span><b id="go-wave">1</b></div>
       <div class="go-item"><span>击毁数</span><b id="go-kills">0</b></div>
+      <div class="go-item"><span>入库金币</span><b id="go-vault">+0◆</b></div>
       <div class="go-item"><span>最高纪录</span><b id="go-best">0</b></div>
     </div>
     <div id="go-board" class="hidden"></div>
