@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEON STRIKE — 霓虹突袭</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="toast" class="hidden"></div>
+
+  <!-- 战斗 HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-tl">
+      <div class="hud-label">护盾 / SHIELD</div>
+      <div id="health-bar"><div id="health-fill"></div></div>
+      <div class="hud-sub"><span id="wave-num">WAVE 01</span><span id="enemies-left"></span></div>
+      <div id="contracts"></div>
+    </div>
+
+    <div class="hud-tr">
+      <div id="score">0</div>
+      <div class="hud-label" style="text-align:right">得分 / SCORE</div>
+      <div id="combo" class="hidden">×1</div>
+      <div id="coins-hud">◆ <span id="coins">0</span></div>
+    </div>
+
+    <div id="players-panel" class="hidden">
+      <div class="hud-label">战况 / PLAYERS</div>
+      <div id="players-list"></div>
+    </div>
+
+    <div id="pvp-chip" class="hidden">
+      <span id="pvp-me">0</span> / <span id="pvp-top">10 杀</span>
+      <div class="hud-label" style="margin-top:2px">击杀目标</div>
+    </div>
+
+    <div class="hud-br">
+      <div id="weapon-name">脉冲步枪</div>
+      <div id="ammo">30<span>/30</span></div>
+      <div id="grenade" class="ready">手雷 [G] 就绪</div>
+      <div id="dash" class="ready">冲刺 [C] 就绪</div>
+      <div id="overcharge" class="hidden">过载 8.0s</div>
+      <div id="reload-hint" class="hidden">按 R 换弹</div>
+    </div>
+
+    <div id="hud-bl">
+      <canvas id="minimap" width="170" height="170"></canvas>
+    </div>
+
+    <div id="floaters"></div>
+
+    <div id="crosshair">
+      <span class="ch t"></span><span class="ch b"></span><span class="ch l"></span><span class="ch r"></span><span class="dot"></span>
+      <div id="reload-ring" class="hidden"></div>
+      <div id="hitmarker"><span></span><span></span></div>
+    </div>
+
+    <div id="wave-banner" class="hidden">WAVE 01</div>
+    <div id="boss-bar" class="hidden">
+      <div class="boss-label">◈ 核心主宰 ◈</div>
+      <div class="boss-track"><div id="boss-fill"></div></div>
+    </div>
+    <div id="dmg-dir"><span></span></div>
+    <div id="vignette"></div>
+    <div id="lowhp"></div>
+    <div id="damage-flash"></div>
+    <div id="scanlines"></div>
+  </div>
+
+  <!-- 开始界面 -->
+  <div id="menu">
+    <div class="menu-inner">
+      <div class="title-glitch" data-text="NEON STRIKE">NEON STRIKE</div>
+      <div class="subtitle">// 霓虹突袭 — 竞技场协议 v3.0</div>
+      <div class="menu-stats">
+        <div>军衔 <b id="menu-rank">Lv.1</b> · 最高纪录 <b id="menu-best">0</b> · 累计 <b id="menu-xp" style="font-size:14px">0</b></div>
+      </div>
+      <div class="menu-row">
+        <input id="player-name" maxlength="12" placeholder="输入代号" autocomplete="off" spellcheck="false" />
+        <button id="btn-fs" class="btn-ghost" style="margin-top:0">⛶ 全屏 (F)</button>
+      </div>
+      <div class="menu-row" id="mode-row" style="margin-top:14px">
+        <button class="mode-chip sel" data-mode="endless">♾ 无尽波次</button>
+        <button class="mode-chip" data-mode="survival">⏱ 限时生存</button>
+        <button class="mode-chip" data-mode="clear">⚡ 歼灭竞速</button>
+      </div>
+      <div class="menu-row">
+        <button id="btn-solo" class="btn-neon">单机训练</button>
+        <button id="btn-mp" class="btn-neon mag">局域网联机</button>
+      </div>
+      <div class="controls">
+        <div><kbd>W A S D</kbd> 移动</div>
+        <div><kbd>鼠标</kbd> 视角 / <kbd>左键</kbd> 射击</div>
+        <div><kbd>右键</kbd> 瞄准</div>
+        <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 切换武器</div>
+        <div><kbd>G</kbd> 手雷</div>
+        <div><kbd>SHIFT</kbd> 疾跑</div>
+        <div><kbd>SPACE</kbd> 跳跃</div>
+        <div><kbd>R</kbd> 换弹</div>
+        <div><kbd>ESC</kbd> 暂停</div>
+      </div>
+      <div class="hint">九种强化 · 九种武器 · 六种敌机 · 每 5 波 BOSS · 单机/联机共战无尽波次</div>
+      <div class="menu-tabs">
+        <button id="btn-daily" class="btn-ghost" style="margin-top:0">📅 每日挑战</button>
+        <button id="btn-ach" class="btn-ghost" style="margin-top:0">🏅 成就</button>
+        <button id="btn-stats" class="btn-ghost" style="margin-top:0">📊 战绩</button>
+        <button id="btn-armory" class="btn-ghost" style="margin-top:0">🛒 军械库</button>
+      </div>
+      <div class="hint dim" id="mp-hint">联机地址：加载中…</div>
+    </div>
+  </div>
+
+  <!-- 房间等待大厅 -->
+  <div id="room" class="overlay hidden" style="cursor:default">
+    <div class="room-inner">
+      <div class="room-code-wrap">
+        <div class="hud-label">房间码 / ROOM</div>
+        <div id="room-code">----</div>
+        <button id="btn-copy-code" class="btn-ghost" style="margin-top:0">复制</button>
+      </div>
+      <div class="room-cols">
+        <div class="room-col">
+          <div class="hud-label">玩家 <span id="room-count"></span></div>
+          <div id="room-players"></div>
+        </div>
+        <div class="room-col">
+          <div class="hud-label">选择地图</div>
+          <div id="room-maps">
+            <button class="map-opt" data-map="0">玄岩要塞<span>中央舞台 · 八柱</span></button>
+            <button class="map-opt" data-map="1">环塔竞技场<span>绕塔环战</span></button>
+            <button class="map-opt" data-map="2">峡谷废墟<span>长墙巷道</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="room-actions">
+        <button id="btn-room-start" class="btn-neon">开始游戏</button>
+        <div id="room-wait" class="hint" style="margin-top:0">等待房主开始…</div>
+        <button id="btn-room-leave" class="btn-ghost">离开房间</button>
+      </div>
+      <div class="hint dim" id="room-lan" style="margin-top:18px"></div>
+    </div>
+  </div>
+
+  <!-- 联机大厅 -->
+  <div id="lobby" class="overlay hidden" style="cursor:default">
+    <div class="overlay-title" style="font-size:36px">联机大厅</div>
+    <div class="hint" id="lobby-status">已连接联机服务 · <span id="lobby-name"></span></div>
+    <div class="lobby-row">
+      <button id="btn-create-coop" class="btn-neon">创建合作房间</button>
+      <button id="btn-create-pvp" class="btn-neon mag">创建大乱斗</button>
+    </div>
+    <div class="lobby-divider">— 或 —</div>
+    <div class="lobby-row">
+      <input id="join-code" maxlength="4" placeholder="房间码" autocomplete="off" spellcheck="false" />
+      <button id="btn-join" class="btn-neon" style="padding:12px 30px">加入</button>
+    </div>
+    <div class="hint dim">合作：同房间共战无尽波次 · 大乱斗：与好友互射，先 10 杀获胜</div>
+    <button id="btn-lobby-back" class="btn-ghost">返回主菜单</button>
+  </div>
+
+  <!-- 暂停 -->
+  <div id="pause" class="overlay hidden">
+    <div class="overlay-title">已暂停</div>
+    <div class="hint" id="pause-hint">点击画面继续</div>
+    <button id="btn-pause-leave" class="btn-ghost hidden">回到大厅</button>
+  </div>
+
+  <!-- 整备：强化三选一 + 军火商 -->
+  <div id="upgrades" class="overlay hidden">
+    <div class="overlay-title" id="upgrade-title">选择强化</div>
+    <div class="hint" style="margin-top:6px">左侧：选一张强化进入下一波（按 1/2/3） · 右侧：军火商，金币消费不结束整备</div>
+    <div id="shop-wrap">
+      <div class="shop-col">
+        <button id="btn-reroll" class="btn-ghost">↻ 换一批（30◆）</button>
+        <div id="upgrade-cards"></div>
+      </div>
+      <div class="shop-col">
+        <div class="shop-head">军火商 · 金币 <b id="shop-coins">0</b>◆</div>
+        <div id="shop-items"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 联机重生 -->
+  <div id="respawn" class="overlay hidden">
+    <div class="overlay-title danger">你已阵亡</div>
+    <div class="hint"><span id="respawn-count">5</span> 秒后重新部署</div>
+  </div>
+
+  <!-- 游戏结束 -->
+  <div id="gameover" class="overlay hidden">
+    <div class="overlay-title danger" id="go-title">防线失守</div>
+    <div class="go-stats">
+      <div class="go-item"><span>最终得分</span><b id="go-score">0</b></div>
+      <div class="go-item"><span>抵达波次</span><b id="go-wave">1</b></div>
+      <div class="go-item"><span>击毁数</span><b id="go-kills">0</b></div>
+      <div class="go-item"><span>最高纪录</span><b id="go-best">0</b></div>
+    </div>
+    <div id="go-board" class="hidden"></div>
+    <div class="go-actions">
+      <button id="btn-retry" class="btn-neon">重新部署</button>
+      <button id="btn-go-leave" class="btn-ghost hidden">回到大厅</button>
+    </div>
+  </div>
+
+  <!-- 成就 / 战绩面板 -->
+  <div id="achv" class="overlay hidden" style="cursor:default; z-index:35">
+    <div class="achv-inner">
+      <div class="overlay-title" id="achv-title" style="font-size:30px">成就</div>
+      <div id="achv-body"></div>
+      <button id="btn-achv-close" class="btn-ghost">返回</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
