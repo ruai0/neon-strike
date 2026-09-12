@@ -100,6 +100,10 @@ const mapNames = ['玄岩要塞', '环塔竞技场', '峡谷废墟'];
 let mapIdx = 0;
 const mapObjects: THREE.Object3D[] = [];
 let horizonRef: THREE.Mesh | null = null;
+// 动画对象缓存（避免每帧全场景遍历）
+const fxRings: THREE.Mesh[] = [];
+const fxPulses: THREE.Mesh[] = [];
+const fxPadGlows: THREE.Mesh[] = [];
 
 // 长墙等矩形碰撞体：把圆形碰撞体推挤出旋转矩形
 function collideWalls(p: { x: number; z: number }, r: number) {  for (const w of wallRects) {
@@ -191,6 +195,7 @@ function hitsStatic(p: THREE.Vector3): boolean {
     pulse.position.y = 0.03;
     pulse.userData.pulseT = i * 0.5;
     scene.add(pulse);
+    fxPulses.push(pulse);
   }
 
   // 弹跳板
@@ -216,10 +221,9 @@ function hitsStatic(p: THREE.Vector3): boolean {
     pad.add(base, glow, ring);
     pad.position.set(x, 0, z);
     pad.userData.jumpPad = true;
-    pad.userData.padGlow = glow;
-    pad.userData.padRing = ring;
     scene.add(pad);
     jumpPads.push({ x, z, mesh: pad });
+    fxPadGlows.push(glow);
   }
 
   for (let i = 0; i < 3; i++) {
@@ -231,6 +235,7 @@ function hitsStatic(p: THREE.Vector3): boolean {
     ring.position.y = 0.5;
     ring.userData.ring = true;
     scene.add(ring);
+    fxRings.push(ring);
   }
 }
 
@@ -1535,6 +1540,42 @@ function renderArmory() {
 $('btn-armory').addEventListener('click', renderArmory);
 $('btn-daily').addEventListener('click', () => { sfx.init(); startDailyRun(); });
 
+// ---------- 设置（灵敏度 / 音量，持久化） ----------
+const settings = JSON.parse(localStorage.getItem('ns-settings') ?? '{"sens":1,"vol":1}') as { sens: number; vol: number };
+function saveSettings() { localStorage.setItem('ns-settings', JSON.stringify(settings)); }
+
+function renderSettings() {
+  $('achv-title').textContent = '设置';
+  const body = $('achv-body');
+  body.innerHTML = `
+    <div class="setting-row">
+      <span>鼠标灵敏度</span>
+      <input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" value="${settings.sens}" />
+      <b id="set-sens-v">${settings.sens.toFixed(2)}</b>
+    </div>
+    <div class="setting-row">
+      <span>音量</span>
+      <input id="set-vol" type="range" min="0" max="1" step="0.05" value="${settings.vol}" />
+      <b id="set-vol-v">${Math.round(settings.vol * 100)}%</b>
+    </div>
+    <div class="hint" style="margin-top:10px">设置自动保存 · 立即生效</div>`;
+  const sens = $('set-sens') as HTMLInputElement;
+  const vol = $('set-vol') as HTMLInputElement;
+  sens.addEventListener('input', () => {
+    settings.sens = Number(sens.value);
+    ($('set-sens-v') as HTMLElement).textContent = settings.sens.toFixed(2);
+    saveSettings();
+  });
+  vol.addEventListener('input', () => {
+    settings.vol = Number(vol.value);
+    ($('set-vol-v') as HTMLElement).textContent = Math.round(settings.vol * 100) + '%';
+    sfx.setVolume(settings.vol);
+    saveSettings();
+  });
+  $('achv').classList.remove('hidden');
+}
+$('btn-settings').addEventListener('click', () => { sfx.init(); sfx.setVolume(settings.vol); sfx.startMusic(); renderSettings(); });
+
 function checkAchievements() {
   for (const a of ACH_DEFS) {
     if (!achUnlocked.has(a.id) && a.test()) {
@@ -1687,7 +1728,7 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 document.addEventListener('mousemove', (e) => {
   if (state !== 'playing' || paused || myDead || document.pointerLockElement !== canvas) return;
-  const sens = 0.0022 * (aiming ? 0.55 : 1);
+  const sens = 0.0022 * settings.sens * (aiming ? 0.55 : 1);
   camera.rotation.y -= e.movementX * sens;
   camera.rotation.x -= e.movementY * sens;
   camera.rotation.x = THREE.MathUtils.clamp(camera.rotation.x, -Math.PI / 2 + 0.05, Math.PI / 2 - 0.05);
@@ -1948,6 +1989,8 @@ function startGame(m: Mode, map?: number) {
   lockPointer();
   pointerLockWatchdog();
   toast(`地图：${mapNames[mapIdx]}`);
+  sfx.setVolume(settings.vol);
+  sfx.startMusic();
 
   if (m === 'solo') {
     if (soloMode === 'survival') {
@@ -3304,19 +3347,16 @@ function animate() {
 
   magLight.intensity = 30 + Math.sin(performance.now() * 0.003) * 14;
   cyanLight.intensity = 30 + Math.sin(performance.now() * 0.004 + 2) * 14;
-  scene.traverse((o) => {
-    if (o.userData.ring) o.rotation.z += dt * 0.15;
-    if (o.userData.pulseT !== undefined) {
-      o.userData.pulseT = (o.userData.pulseT + dt / 7) % 1;
-      const t = o.userData.pulseT as number;
-      o.scale.setScalar(1 + t * ARENA_HALF * 1.9);
-      ((o as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.32 * (1 - t);
-    }
-    if (o.userData.jumpPad) {
-      const glow = o.userData.padGlow as THREE.Mesh;
-      (glow.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.0 + Math.sin(performance.now() * 0.005) * 0.5;
-    }
-  });
+  for (const r of fxRings) r.rotation.z += dt * 0.15;
+  for (const p of fxPulses) {
+    p.userData.pulseT = (p.userData.pulseT + dt / 7) % 1;
+    const t = p.userData.pulseT as number;
+    p.scale.setScalar(1 + t * ARENA_HALF * 1.9);
+    (p.material as THREE.MeshBasicMaterial).opacity = 0.32 * (1 - t);
+  }
+  for (const g of fxPadGlows) {
+    (g.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.0 + Math.sin(performance.now() * 0.005) * 0.5;
+  }
   updateHusks(dt);
   updateBeams(dt);
 

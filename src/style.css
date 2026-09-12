@@ -702,6 +702,18 @@ kbd {
 .armory-xp b { color: var(--amber); font-size: 20px; text-shadow: 0 0 10px rgba(255, 179, 0, 0.5); }
 .armory-row { width: 420px; }
 
+/* 设置面板 */
+.setting-row {
+  display: flex; align-items: center; gap: 18px;
+  background: var(--panel);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  padding: 14px 20px;
+  width: 420px;
+}
+.setting-row span { font-size: 15px; letter-spacing: 2px; color: #cfe9ef; min-width: 100px; }
+.setting-row input[type="range"] { flex: 1; accent-color: var(--cyan); }
+.setting-row b { font-family: var(--font-display); color: var(--cyan); min-width: 52px; text-align: right; }
+
 /* 合同任务 */
 #contracts { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; max-width: 250px; }
 .contract {

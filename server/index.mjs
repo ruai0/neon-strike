@@ -26,6 +26,16 @@ const server = http.createServer((req, res) => {
 });
 const wss = new WebSocketServer({ server });
 
+// 心跳：清理断开的死连接（浏览器崩溃/断网不发送 close 的情况）
+wss.on('connection', (ws) => { ws.isAlive = true; ws.on('pong', () => { ws.isAlive = true; }); });
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) { ws.terminate(); return; }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
 /** @type {Map<string, Room>} */
 const rooms = new Map();
 let nextId = 1;

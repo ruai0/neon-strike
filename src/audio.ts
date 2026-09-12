@@ -3,17 +3,57 @@ export class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
+  private vol = 1;
+  private musicOn = false;
 
   init() {
     if (this.ctx) { void this.ctx.resume(); return; }
     this.ctx = new AudioContext();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.4;
+    this.master.gain.value = 0.4 * this.vol;
     this.master.connect(this.ctx.destination);
     const len = this.ctx.sampleRate * 0.5;
     this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const data = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  }
+
+  // 音量（0~1），设置面板调用
+  setVolume(v: number) {
+    this.vol = Math.max(0, Math.min(1, v));
+    if (this.master) this.master.gain.value = 0.4 * this.vol;
+  }
+
+  // 氛围音乐：低频失谐锯齿波垫底 + 低通扫频，零素材氛围垫
+  startMusic() {
+    if (!this.ctx || !this.master || this.musicOn) return;
+    this.musicOn = true;
+    const mk = (f: number) => {
+      const osc = this.ctx!.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = f;
+      return osc;
+    };
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 160;
+    filter.Q.value = 6;
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0.035;
+    const oscA = mk(55);
+    const oscB = mk(55.6);
+    const oscC = mk(110.3);
+    // 慢速 LFO 扫滤波，产生呼吸感
+    const lfo = this.ctx.createOscillator();
+    lfo.frequency.value = 0.06;
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.value = 90;
+    lfo.connect(lfoGain).connect(filter.frequency);
+    oscA.connect(filter);
+    oscB.connect(filter);
+    oscC.connect(filter);
+    filter.connect(gain).connect(this.master);
+    oscA.start(); oscB.start(); oscC.start(); lfo.start();
   }
 
   private tone(type: OscillatorType, f0: number, f1: number, dur: number, vol: number, delay = 0) {
