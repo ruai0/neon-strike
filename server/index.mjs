@@ -188,6 +188,7 @@ function sendState(room) {
       id: p.id_, name: p.name, x: p.x, y: p.y, z: p.z, yaw: p.yaw,
       hp: Math.max(0, Math.round(p.hp)), dead: p.dead, score: p.score, kills: p.kills,
       respawn: p.dead && room.mode === 'pvp' ? Math.max(0, Math.ceil(p.respawnT)) : undefined,
+      prot: !p.dead && p.protectT > 0 ? true : undefined,
     })),
     enemies: [...room.enemies.values()].map((e) => ({
       id: e.id, k: e.kind, x: e.x, y: e.y, z: e.z, h: Math.max(0, e.hp) / KINDS[e.kind].hp,
@@ -213,6 +214,7 @@ function startPvpRound(room) {
     p.hp = 100;
     p.kills = 0;
     p.score = 0;
+    p.protectT = 2;
     const ang = Math.random() * Math.PI * 2;
     p.x = Math.cos(ang) * 22;
     p.z = Math.sin(ang) * 22;
@@ -355,6 +357,7 @@ wss.on('connection', (ws, req) => {
         if (room.mode !== 'pvp' || !room.pvpActive || player.dead) return;
         const target = room.players.get(m.target);
         if (!target || target.dead || target.id_ === id) return;
+        if (target.protectT > 0) return; // 出生保护
         const dmg = Math.max(0, Math.min(Number(m.dmg) || 0, 100));
         target.hp -= dmg;
         roomBroadcast(room, { t: 'phitfx', target: m.target, h: Math.max(0, target.hp) / 100 });
@@ -428,13 +431,15 @@ setInterval(() => {
     const dt = TICK_MS / 1000;
 
     if (room.mode === 'pvp') {
-      // PvP 重生计时
+      // 重生 + 出生保护计时
       for (const p of room.players.values()) {
+        if (p.protectT > 0) p.protectT = Math.max(0, p.protectT - dt);
         if (p.dead) {
           p.respawnT -= dt;
           if (p.respawnT <= 0) {
             p.dead = false;
             p.hp = 100;
+            p.protectT = 2;
             const ang = Math.random() * Math.PI * 2;
             p.x = Math.cos(ang) * 20;
             p.z = Math.sin(ang) * 20;

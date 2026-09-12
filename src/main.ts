@@ -780,8 +780,9 @@ interface RemotePlayer {
   group: THREE.Group; tag: THREE.Sprite;
   hitMeshes: THREE.Mesh[];
   body: THREE.Mesh;
+  bubble: THREE.Mesh;
   target: THREE.Vector3; yaw: number;
-  score: number; kills: number; dead: boolean;
+  score: number; kills: number; dead: boolean; protect: boolean;
 }
 const remotes = new Map<string, RemotePlayer>();
 
@@ -809,10 +810,17 @@ function addRemote(id: string, name: string, x: number, y: number, z: number): R
   jet.position.set(0, 0.15, 0.32);
   const tag = makeNameTag(name, '#7db8ff');
   tag.position.y = 2.0;
-  group.add(body, head, visor, jet, tag);
+  // 出生保护护盾罩
+  const bubble = new THREE.Mesh(
+    new THREE.SphereGeometry(0.85, 14, 12),
+    new THREE.MeshBasicMaterial({ color: CYAN, transparent: true, opacity: 0.18, depthWrite: false }),
+  );
+  bubble.position.y = 0.7;
+  bubble.visible = false;
+  group.add(body, head, visor, jet, bubble, tag);
   group.position.set(x, y - EYE_HEIGHT, z);
   scene.add(group);
-  const rp: RemotePlayer = { id, name, group, tag, hitMeshes: [body, head, visor], target: group.position.clone(), yaw: 0, score: 0, kills: 0, dead: false, body };
+  const rp: RemotePlayer = { id, name, group, tag, hitMeshes: [body, head, visor], bubble, body, target: group.position.clone(), yaw: 0, score: 0, kills: 0, dead: false, protect: false };
   for (const m of rp.hitMeshes) m.userData.pvpId = id;
   remotes.set(id, rp);
   return rp;
@@ -1105,6 +1113,7 @@ let aiming = false;
 let gunKick = 0;
 let overcharge = 0;
 let myDead = false;
+let selfProtected = false;
 let respawnTimer = 0;
 let mpTotalLeft = 0;
 
@@ -1581,10 +1590,23 @@ function checkAchievements() {
     if (!achUnlocked.has(a.id) && a.test()) {
       achUnlocked.add(a.id);
       localStorage.setItem('ns-ach', JSON.stringify([...achUnlocked]));
-      toast(`★ 成就解锁：${a.name}`);
+      showAchToast(a.name);
       sfx.pickup();
     }
   }
+}
+
+// 成就专属弹窗（区别于普通 toast）
+let achToastTimer: number | undefined;
+function showAchToast(name: string) {
+  const el = $('achv-toast');
+  $('achv-toast-name').textContent = name;
+  el.classList.remove('hidden');
+  el.classList.remove('play');
+  void el.offsetWidth;
+  el.classList.add('play');
+  clearTimeout(achToastTimer);
+  achToastTimer = window.setTimeout(() => el.classList.add('hidden'), 3600);
 }
 
 // ---------- 波次变异协议（单机） ----------
@@ -1881,6 +1903,11 @@ function leaveToLobby() {
     startGame('solo');
   }
 }
+$('btn-pause-settings').addEventListener('click', (e) => {
+  e.stopPropagation();
+  sfx.setVolume(settings.vol);
+  renderSettings();
+});
 $('btn-pause-leave').addEventListener('click', (e) => { e.stopPropagation(); leaveToLobby(); });
 $('btn-go-leave').addEventListener('click', () => leaveToLobby());
 elPause.addEventListener('click', () => {
@@ -2562,6 +2589,9 @@ net.on('state', (m: { players: any[]; enemies: { id: number; k: EnemyKind; x: nu
         hp = p.hp;
         updateHealthUI();
         elPvpMe.textContent = String(p.kills);
+        // 自己的出生保护提示
+        if (p.prot && !selfProtected) { selfProtected = true; toast('🛡 出生保护 2 秒'); }
+        if (!p.prot && selfProtected) selfProtected = false;
         if (p.dead && !myDead) {
           myDead = true;
           gun.visible = false;
@@ -2592,6 +2622,8 @@ net.on('state', (m: { players: any[]; enemies: { id: number; k: EnemyKind; x: nu
     rp.score = p.score;
     rp.kills = p.kills;
     rp.dead = p.dead;
+    rp.protect = p.prot === true;
+    rp.bubble.visible = rp.protect;
     rp.group.visible = !p.dead;
   }
   for (const id of [...remotes.keys()]) {

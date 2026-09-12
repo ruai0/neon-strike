@@ -168,7 +168,19 @@
   <div id="pause" class="overlay hidden">
     <div class="overlay-title">已暂停</div>
     <div class="hint" id="pause-hint">点击画面继续</div>
-    <button id="btn-pause-leave" class="btn-ghost hidden">回到大厅</button>
+    <div class="room-actions" style="margin-top:22px">
+      <button id="btn-pause-settings" class="btn-ghost" style="margin-top:0">⚙ 设置</button>
+      <button id="btn-pause-leave" class="btn-ghost hidden">回到大厅</button>
+    </div>
+  </div>
+
+  <!-- 成就解锁弹窗 -->
+  <div id="achv-toast" class="hidden">
+    <div class="at-shine"></div>
+    <div class="at-body">
+      <span class="at-ico">🏆</span>
+      <div><b>成就解锁</b><span id="achv-toast-name"></span></div>
+    </div>
   </div>
 
   <!-- 整备：强化三选一 + 军火商 -->

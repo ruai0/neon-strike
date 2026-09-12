@@ -123,6 +123,7 @@ export class Enemy {
   private hpFill: THREE.Mesh;
   private barW: number;
   private flashT = 0;
+  private hpShownAt = 0;
 
   constructor(public kind: EnemyKind, public speed: number, spawnPos: THREE.Vector3) {
     const cfg = KIND_CFG[kind];
@@ -223,6 +224,7 @@ export class Enemy {
   setHp01(ratio: number) {
     const r = Math.max(0, Math.min(1, ratio));
     this.hpBarGroup.visible = r < 0.999;
+    if (this.hpBarGroup.visible) this.hpShownAt = performance.now();
     this.hpFill.scale.x = Math.max(0.001, r);
     this.hpFill.position.x = -(1 - r) * this.barW / 2;
     this.hp = r * this.maxHp;
@@ -278,6 +280,10 @@ export class Enemy {
     if (netDriven) this.position.lerp(this.netTarget, Math.min(dt * 10, 1));
 
     this.hpBarGroup.lookAt(cameraPos);
+    // 血条显示 5 秒后自动隐藏，减少视觉噪音
+    if (this.hpBarGroup.visible && performance.now() - this.hpShownAt > 5000) {
+      this.hpBarGroup.visible = false;
+    }
     if (this.aura) {
       (this.aura.material as THREE.MeshBasicMaterial).opacity = 0.55 + Math.sin(this.bobPhase * 2) * 0.25;
       this.aura.rotation.z += dt * 1.2;
