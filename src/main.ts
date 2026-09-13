@@ -1521,10 +1521,12 @@ function renderContracts() {
 
 // ---------- 军衔（跨局成长） ----------
 let xp = Number(localStorage.getItem('ns-xp') ?? 0);
+let prestige = Number(localStorage.getItem('ns-prestige') ?? 0); // 转生次数：每层永久 经验&金币 +10%
+let prestigeArmed = false; // 转生二段确认
 function getRank() { return Math.max(1, Math.floor(Math.sqrt(xp / 80))); }
 
 function commitXp() {
-  xp += Math.max(0, Math.round(score / 10 * (1 + 0.06 * perks.xp)));
+  xp += Math.max(0, Math.round(score / 10 * (1 + 0.06 * perks.xp) * (1 + 0.1 * prestige)));
   localStorage.setItem('ns-xp', String(xp));
 }
 
@@ -1644,7 +1646,8 @@ function renderAchPanel(tab: 'ach' | 'stats') {
         <div class="stat-cell"><b>${ltk.coins}</b><span>累计金币</span></div>
         <div class="stat-cell"><b>${ltk.runs}</b><span>出战次数</span></div>
         <div class="stat-cell"><b>${ltk.pvpWins}</b><span>大乱斗获胜</span></div>
-        <div class="stat-cell"><b>${getRank()}</b><span>当前军衔</span></div>
+        <div class="stat-cell"><b>${getRank()}${prestige > 0 ? ' ⭐' + prestige : ''}</b><span>当前军衔</span></div>
+        <div class="stat-cell"><b>+${prestige * 10}%</b><span>转生加成</span></div>
         <div class="stat-cell"><b>${xp}</b><span>累计经验</span></div>
       </div>`;
   }
@@ -1692,7 +1695,13 @@ function renderProgression(tab: 'vault' | 'armory') {
 function renderArmory() {
   $('achv-title').textContent = '养成中枢 · 军械库（经验线）';
   const body = $('achv-body');
-  body.innerHTML = progTabsHtml('armory') + `<div class="armory-xp">可用经验 <b>${xp}</b> XP · 军衔 Lv.${getRank()} · 购买永久生效</div>` +
+  const prestigeRow = `<div class="vault-sec">⭐ 转生（军衔 Lv.8 解锁 · 二次点击确认）</div>
+    <div class="shop-item vault-row${getRank() >= 8 ? '' : ' off'}" id="prestige-row">
+      <span class="si-name">转生 <i>${prestige > 0 ? '⭐'.repeat(Math.min(prestige, 5)) + (prestige > 5 ? `×${prestige}` : '') : '未转生'}</i></span>
+      <span class="si-sub">保留：武器/词缀/装配/成就/战绩 · 重置：经验军衔/军械库强化/仓库金币/武器精通/元升级 · 永久 经验&金币 +10%/层（当前 +${prestige * 10}%）</span>
+      <b class="si-price">${getRank() >= 8 ? (prestigeArmed ? '⚠ 确认转生' : '转生') : 'Lv.8'}</b>
+    </div>`;
+  body.innerHTML = progTabsHtml('armory') + `<div class="armory-xp">可用经验 <b>${xp}</b> XP · 军衔 Lv.${getRank()}${prestige > 0 ? ' ⭐' + prestige : ''} · 购买永久生效</div>` +
     PERK_DEFS.map((p) => {
       const lv = perks[p.key];
       const maxed = lv >= p.max;
@@ -1719,6 +1728,25 @@ function renderArmory() {
       refreshMenuMeta();
       renderArmory();
     });
+  });
+  body.querySelector('#prestige-row')?.addEventListener('click', () => {
+    if (getRank() < 8) { sfx.empty(); toast('转生需要军衔 Lv.8'); return; }
+    if (!prestigeArmed) { prestigeArmed = true; renderArmory(); return; }
+    prestigeArmed = false;
+    prestige++;
+    localStorage.setItem('ns-prestige', String(prestige));
+    xp = 0;
+    localStorage.setItem('ns-xp', '0');
+    perks = { armor: 0, pay: 0, fire: 0, tactic: 0, magnet: 0, dash: 0, xp: 0 };
+    savePerks();
+    vault.coins = 0;
+    vault.mastery = {};
+    vault.meta = {};
+    saveVault();
+    sfx.pickup();
+    refreshMenuMeta();
+    toast(`⭐ 转生完成！永久加成：经验与金币 +${prestige * 10}%`);
+    renderArmory();
   });
   wireProgTabs();
   $('achv').classList.remove('hidden');
@@ -1784,7 +1812,7 @@ function challengeCoinMul(): number {
 }
 // 统一金币入账：局内可用 + 结算入库；战绩只记基础值，加成不夸大数据
 function gainCoins(base: number, lootMul = 1) {
-  const amt = Math.round((base + metaLoot * lootMul) * challengeCoinMul());
+  const amt = Math.round((base + metaLoot * lootMul) * challengeCoinMul() * (1 + 0.1 * prestige));
   coins += amt;
   runEarned += amt;
   ltk.coins += base;
@@ -1815,7 +1843,13 @@ function renderSettings() {
       <input id="set-vol" type="range" min="0" max="1" step="0.05" value="${settings.vol}" />
       <b id="set-vol-v">${Math.round(settings.vol * 100)}%</b>
     </div>
-    <div class="hint" style="margin-top:10px">设置自动保存 · 立即生效</div>`;
+    <div class="vault-sec" style="margin-top:16px">存档迁移（跨设备）</div>
+    <textarea id="save-io" class="save-io" placeholder="导出：存档文本会生成在这里，复制保存 · 导入：把存档文本粘贴到这里再点导入"></textarea>
+    <div class="lobby-row" style="margin-top:8px">
+      <button id="btn-save-export" class="btn-ghost" style="margin-top:0">📤 导出到文本</button>
+      <button id="btn-save-import" class="btn-ghost" style="margin-top:0">📥 从文本导入</button>
+    </div>
+    <div class="hint" style="margin-top:8px">包含金币/经验/仓库/成就/战绩/设置全部进度 · 导入成功后自动刷新页面</div>`;
   const sens = $('set-sens') as HTMLInputElement;
   const vol = $('set-vol') as HTMLInputElement;
   sens.addEventListener('input', () => {
@@ -1828,6 +1862,41 @@ function renderSettings() {
     ($('set-vol-v') as HTMLElement).textContent = Math.round(settings.vol * 100) + '%';
     sfx.setVolume(settings.vol);
     saveSettings();
+  });
+  // 存档导出 / 导入
+  const collectSave = () => {
+    const data: Record<string, string> = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)!;
+      if (/^ns-/.test(k) || k === 'neon-strike-best') data[k] = localStorage.getItem(k) ?? '';
+    }
+    return 'NS1.' + btoa(encodeURIComponent(JSON.stringify({ v: 1, ts: Date.now(), data })));
+  };
+  $('btn-save-export').addEventListener('click', () => {
+    const ta = $('save-io') as HTMLTextAreaElement;
+    ta.value = collectSave();
+    ta.select();
+    navigator.clipboard?.writeText(ta.value).then(
+      () => toast('📤 存档已生成并复制，粘贴保存到别处'),
+      () => toast('📤 存档已生成，请手动全选复制'),
+    );
+  });
+  $('btn-save-import').addEventListener('click', () => {
+    const ta = $('save-io') as HTMLTextAreaElement;
+    const raw = ta.value.trim();
+    try {
+      const json = raw.startsWith('NS1.') ? decodeURIComponent(atob(raw.slice(4))) : raw;
+      const obj = JSON.parse(json) as { v: number; data: Record<string, string> };
+      if (obj.v !== 1 || !obj.data || typeof obj.data !== 'object') throw new Error('bad save');
+      for (const [k, val] of Object.entries(obj.data)) {
+        if (/^ns-/.test(k) || k === 'neon-strike-best') localStorage.setItem(k, String(val));
+      }
+      toast('📥 存档导入成功，即将刷新…');
+      setTimeout(() => location.reload(), 800);
+    } catch {
+      toast('❌ 存档格式无效');
+      sfx.empty();
+    }
   });
   $('achv').classList.remove('hidden');
 }
@@ -2031,7 +2100,7 @@ const elMinimap = $('minimap') as HTMLCanvasElement;
 const elNameInput = $('player-name') as HTMLInputElement;
 $('menu-best').textContent = String(best);
 function refreshMenuMeta() {
-  $('menu-rank').textContent = `Lv.${getRank()}`;
+  $('menu-rank').textContent = `Lv.${getRank()}${prestige > 0 ? ' ⭐' + prestige : ''}`;
   $('menu-xp').textContent = String(xp);
   $('menu-vault').textContent = String(vault.coins);
   refreshDailyButton();
