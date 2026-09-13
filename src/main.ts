@@ -1318,10 +1318,8 @@ function updateCoins(dt: number) {
     c.mesh.position.addScaledVector(c.vel, dt);
     c.mesh.rotation.y += dt * 6;
     if (d < 1.1 && !myDead) {
-      coins += 5 + metaLoot;
-      runEarned += 5 + metaLoot;
-      ltk.coins += 5 + metaLoot;
-      trackContract('coins', 5);
+      const amt = gainCoins(5);
+      trackContract('coins', amt);
       sfx.hit();
       updateCoinsUI();
       scene.remove(c.mesh);
@@ -1361,9 +1359,9 @@ function trackContract(key: string, amount = 1) {
       c.progress = Math.min(c.target, c.progress + amount);
       if (c.progress >= c.target) {
         c.done = true;
-        coins += c.reward;
+        const amt = gainCoins(c.reward);
         updateCoinsUI();
-        toast(`✔ 合同完成：${c.desc} +${c.reward}◆`);
+        toast(`✔ 合同完成：${c.desc} +${amt}◆`);
         sfx.pickup();
       }
       changed = true;
@@ -1457,18 +1455,18 @@ function updateHazards(dt: number) {
 }
 
 // ---------- 成就 ----------
-const ACH_DEFS: { id: string; name: string; desc: string; test: () => boolean }[] = [
-  { id: 'first',  name: '初次击毁',       desc: '摧毁你的第一台敌机',        test: () => kills >= 1 },
-  { id: 'k10',    name: '械斗熟练',       desc: '单局击毁 10 台敌机',        test: () => kills >= 10 },
-  { id: 'k50',    name: '战场清扫者',     desc: '单局击毁 50 台敌机',        test: () => kills >= 50 },
-  { id: 's5k',    name: '五千分俱乐部',   desc: '单局得分达到 5000',         test: () => score >= 5000 },
-  { id: 's20k',   name: '竞技场传奇',     desc: '单局得分达到 20000',        test: () => score >= 20000 },
-  { id: 'w5',     name: '挺过第五波',     desc: '单局到达第 5 波',           test: () => wave >= 5 },
-  { id: 'w10',    name: '双位数波次',     desc: '单局到达第 10 波',          test: () => wave >= 10 },
-  { id: 'boss',   name: '弑主者',         desc: '击毁核心主宰',              test: () => bossKills >= 1 },
-  { id: 'maxgun', name: '枪械大师',       desc: '任意武器熟练度达到 III',    test: () => ALL_WEAPONS.some((w) => weaponLv[w] >= 3) },
-  { id: 'rich',   name: '竞技场富豪',     desc: '单局持有金币达到 500',      test: () => coins >= 500 },
-  { id: 'allgun', name: '军火贩子',       desc: '单局集齐全部 5 把武器',     test: () => owned.length >= 5 },
+const ACH_DEFS: { id: string; name: string; desc: string; reward: number; test: () => boolean }[] = [
+  { id: 'first',  name: '初次击毁',       desc: '摧毁你的第一台敌机',        reward: 50,  test: () => kills >= 1 },
+  { id: 'k10',    name: '械斗熟练',       desc: '单局击毁 10 台敌机',        reward: 80,  test: () => kills >= 10 },
+  { id: 'k50',    name: '战场清扫者',     desc: '单局击毁 50 台敌机',        reward: 150, test: () => kills >= 50 },
+  { id: 's5k',    name: '五千分俱乐部',   desc: '单局得分达到 5000',         reward: 100, test: () => score >= 5000 },
+  { id: 's20k',   name: '竞技场传奇',     desc: '单局得分达到 20000',        reward: 300, test: () => score >= 20000 },
+  { id: 'w5',     name: '挺过第五波',     desc: '单局到达第 5 波',           reward: 80,  test: () => wave >= 5 },
+  { id: 'w10',    name: '双位数波次',     desc: '单局到达第 10 波',          reward: 200, test: () => wave >= 10 },
+  { id: 'boss',   name: '弑主者',         desc: '击毁核心主宰',              reward: 250, test: () => bossKills >= 1 },
+  { id: 'maxgun', name: '枪械大师',       desc: '任意武器熟练度达到 III',    reward: 200, test: () => ALL_WEAPONS.some((w) => weaponLv[w] >= 3) },
+  { id: 'rich',   name: '竞技场富豪',     desc: '单局持有金币达到 500',      reward: 100, test: () => coins >= 500 },
+  { id: 'allgun', name: '军火贩子',       desc: '单局集齐全部 5 把武器',     reward: 250, test: () => owned.length >= 5 },
 ];
 let bossKills = 0;
 let lowHpTime = 0;
@@ -1485,7 +1483,7 @@ function renderAchPanel(tab: 'ach' | 'stats') {
   if (tab === 'ach') {
     body.innerHTML = ACH_DEFS.map((a) => {
       const un = achUnlocked.has(a.id);
-      return `<div class="ach-row${un ? ' un' : ''}"><span class="ach-ico">${un ? '✅' : '🔒'}</span><div class="ach-txt"><b>${a.name}</b><span>${a.desc}</span></div></div>`;
+      return `<div class="ach-row${un ? ' un' : ''}"><span class="ach-ico">${un ? '✅' : '🔒'}</span><div class="ach-txt"><b>${a.name}</b><span>${a.desc} · 奖励 +${a.reward}◆</span></div></div>`;
     }).join('');
   } else {
     body.innerHTML = `
@@ -1590,6 +1588,19 @@ function metaLv(k: string): number { return vault.meta[k] ?? 0; }
 let pendingChallenge = { mods: [] as string[], diff: 0 };
 let challengeMods: string[] = [];   // 本局生效的协议
 let challengeDiff = 0;              // 本局难度档位
+
+// 挑战收益加成：每条协议 +20%，难度档 +25%（高风险 = 更快养成）
+function challengeCoinMul(): number {
+  return 1 + challengeMods.length * 0.2 + challengeDiff * 0.25;
+}
+// 统一金币入账：局内可用 + 结算入库；战绩只记基础值，加成不夸大数据
+function gainCoins(base: number, lootMul = 1) {
+  const amt = Math.round((base + metaLoot * lootMul) * challengeCoinMul());
+  coins += amt;
+  runEarned += amt;
+  ltk.coins += base;
+  return amt;
+}
 
 // 词缀强度等级：局内捡到临时词缀=1级；与仓库锻造的词缀同类型时，享受锻造等级
 function affixLv(w: WeaponId): number {
@@ -1740,6 +1751,7 @@ function renderVault() {
 function renderChallenge() {
   const body = $('achv-body');
   $('achv-title').textContent = '挑战模式';
+  const mul = (1 + pendingChallenge.mods.length * 0.2 + pendingChallenge.diff * 0.25).toFixed(2);
   const modBtns = WAVE_MODS.map((m) =>
     `<button class="loadout-chip${pendingChallenge.mods.includes(m.id) ? ' on' : ''}" data-mod="${m.id}">${m.label}</button>`,
   ).join('');
@@ -1747,12 +1759,12 @@ function renderChallenge() {
     { d: 0, t: '普通' }, { d: 1, t: '精英 · 敌血/速 +35%' }, { d: 2, t: '噩梦 · 敌血/速 +70%' },
   ].map((x) => `<button class="loadout-chip${pendingChallenge.diff === x.d ? ' on' : ''}" data-diff="${x.d}">${x.t}</button>`).join('');
   body.innerHTML = `
-    <div class="vault-head">挑战协议 · 选择后每波生效 · 仅单机</div>
-    <div class="vault-sec">变异协议（可多选）</div>
+    <div class="vault-head">挑战协议 · 选择后每波生效 · 仅单机 · 金币收益 <b>×${mul}</b></div>
+    <div class="vault-sec">变异协议（可多选 · 每条 +20% 收益）</div>
     <div class="vault-loadout">${modBtns}</div>
-    <div class="vault-sec">难度档位</div>
+    <div class="vault-sec">难度档位（+25% 收益/档）</div>
     <div class="vault-loadout">${diffBtns}</div>
-    <div class="hint" style="margin-top:10px">从主菜单「单机训练」开局即套用；每日挑战与联机不套用。</div>`;
+    <div class="hint" style="margin-top:10px">挑战加成直接提升所有金币获取（拾取/合同/满级返还），结算全额入库；从主菜单「单机训练」开局即套用，每日挑战与联机不套用。</div>`;
   body.querySelectorAll<HTMLElement>('[data-mod]').forEach((el) => el.addEventListener('click', () => {
     const id = el.dataset.mod!;
     const i = pendingChallenge.mods.indexOf(id);
@@ -1770,7 +1782,10 @@ function checkAchievements() {
     if (!achUnlocked.has(a.id) && a.test()) {
       achUnlocked.add(a.id);
       localStorage.setItem('ns-ach', JSON.stringify([...achUnlocked]));
-      showAchToast(a.name);
+      vault.coins += a.reward; // 成就奖励一次性入库
+      saveVault();
+      refreshMenuMeta();
+      showAchToast(a.name, a.reward);
       sfx.pickup();
     }
   }
@@ -1778,9 +1793,9 @@ function checkAchievements() {
 
 // 成就专属弹窗（区别于普通 toast）
 let achToastTimer: number | undefined;
-function showAchToast(name: string) {
+function showAchToast(name: string, reward = 0) {
   const el = $('achv-toast');
-  $('achv-toast-name').textContent = name;
+  $('achv-toast-name').textContent = reward > 0 ? `${name} · +${reward}◆ 已入库` : name;
   el.classList.remove('hidden');
   el.classList.remove('play');
   void el.offsetWidth;
@@ -2279,6 +2294,15 @@ function gameOver(board?: { name: string; score: number; kills: number }[], titl
       localStorage.setItem(dailyBestKey(), String(score));
       toast('📅 每日挑战新纪录！');
     }
+    // 每日首通奖励（每天一次，直接入库）
+    const rk = `ns-daily-reward-${dailyBestKey()}`;
+    if (score > 0 && !localStorage.getItem(rk)) {
+      localStorage.setItem(rk, '1');
+      vault.coins += 150;
+      saveVault();
+      refreshMenuMeta();
+      toast('📅 每日首通奖励 +150◆ 已入库');
+    }
     dailyActive = false;
   }
   $('go-title').textContent = title;
@@ -2439,8 +2463,7 @@ function pickupWeapon(w: WeaponId) {
     toast(`${aff}${aff ? '·' : ''}${WEAPONS[w].name} 熟练度提升 → ${'I'.repeat(weaponLv[w])}（伤害 +15%）`);
   } else {
     ammoPool[w] = magOf(w);
-    coins += 30 + metaLoot * 6;
-    runEarned += 30 + metaLoot * 6;
+    gainCoins(30, 6);
     updateCoinsUI();
     toast(`${WEAPONS[w].name} 已满熟练 · 弹药补满 +30◆`);
   }
@@ -3696,7 +3719,8 @@ function dailyBestKey() { return `ns-daily-${new Date().toISOString().slice(0, 1
 function dailyBest() { return Number(localStorage.getItem(dailyBestKey()) ?? 0); }
 function refreshDailyButton() {
   const b = dailyBest();
-  $('btn-daily').textContent = b > 0 ? `📅 每日挑战 · 今日最佳 ${b}` : '📅 每日挑战';
+  const tag = localStorage.getItem(`ns-daily-reward-${dailyBestKey()}`) ? '' : ' · 首通 +150◆';
+  $('btn-daily').textContent = b > 0 ? `📅 每日挑战 · 今日最佳 ${b}${tag}` : `📅 每日挑战${tag}`;
 }
 function startDailyRun() {
   pendingDaily = true;
