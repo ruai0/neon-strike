@@ -1698,6 +1698,28 @@ const PERK_DEFS: { key: keyof Perks; name: string; desc: string; max: number }[]
 const perkCost = (lv: number) => (lv + 1) * 200;
 
 // ---------- 养成中枢（仓库·金币线 + 军械库·经验线，合并入口） ----------
+// 收集进度总览（面板内部展示，不占主菜单）
+function progressOverviewHtml() {
+  const weapons = 1 + vault.weapons.length;
+  const affix = ALL_WEAPONS.reduce((a, w) => a + (vault.affix[w]?.length ?? 0), 0);
+  const mast = ALL_WEAPONS.reduce((a, w) => a + Math.min(3, vault.mastery[w] ?? 0), 0);
+  const meta = META_DEFS.reduce((a, m) => a + Math.min(m.max, metaLv(m.key)), 0);
+  const metaMax = META_DEFS.reduce((a, m) => a + m.max, 0);
+  const items: [string, number, number][] = [
+    ['武器', weapons, ALL_WEAPONS.length],
+    ['词缀槽', affix, ALL_WEAPONS.length * 3],
+    ['武器精通', mast, ALL_WEAPONS.length * 3],
+    ['元升级', meta, metaMax],
+    ['成就', achUnlocked.size, ACH_DEFS.length],
+  ];
+  const pct = Math.round(items.reduce((a, [, v, m]) => a + v / m, 0) / items.length * 100);
+  return `<div class="prog-overview">
+    <div class="po-head">养成完成度 <b>${pct}%</b></div>
+    <div class="po-items">${items.map(([k, v, m]) =>
+      `<div class="po-item"><span>${k} <b>${v}/${m}</b></span><div class="po-bar"><i style="width:${Math.min(100, Math.round(v / m * 100))}%"></i></div></div>`,
+    ).join('')}</div>
+  </div>`;
+}
 function progTabsHtml(active: 'vault' | 'armory') {
   return `<div class="prog-tabs">
     <button class="loadout-chip${active === 'vault' ? ' on' : ''}" data-ptab="vault">🎒 仓库·军备 <b>${vault.coins}</b>◆</button>
@@ -1722,7 +1744,7 @@ function renderArmory() {
       <span class="si-sub">保留：武器/词缀/装配/成就/战绩 · 重置：经验军衔/军械库强化/仓库金币/武器精通/元升级 · 永久 经验&金币 +10%/层（当前 +${prestige * 10}%）</span>
       <b class="si-price">${getRank() >= 8 ? (prestigeArmed ? '⚠ 确认转生' : '转生') : 'Lv.8'}</b>
     </div>`;
-  body.innerHTML = progTabsHtml('armory') + `<div class="armory-xp">可用经验 <b>${xp}</b> XP · 军衔 Lv.${getRank()}${prestige > 0 ? ' ⭐' + prestige : ''} · 购买永久生效</div>` +
+  body.innerHTML = progTabsHtml('armory') + progressOverviewHtml() + `<div class="armory-xp">可用经验 <b>${xp}</b> XP · 军衔 Lv.${getRank()}${prestige > 0 ? ' ⭐' + prestige : ''} · 购买永久生效</div>` +
     PERK_DEFS.map((p) => {
       const lv = perks[p.key];
       const maxed = lv >= p.max;
@@ -1985,7 +2007,7 @@ function renderVault() {
     </div>`;
   }).join('');
 
-  body.innerHTML = progTabsHtml('vault') + `
+  body.innerHTML = progTabsHtml('vault') + progressOverviewHtml() + `
     <div class="vault-head">仓库金币 <b>${vault.coins}</b>◆ · 本局待入库 <b>${runEarned}</b>◆</div>
     <div class="vault-sec">① 武器解锁（永久）</div>
     <div class="vault-list">${unlockRows}</div>
@@ -2392,6 +2414,73 @@ function backToMenu() {
   refreshMenuMeta();
 }
 $('btn-go-menu').addEventListener('click', () => { sfx.init(); backToMenu(); });
+
+// 战绩分享卡片：canvas 绘制 + 一键下载
+let lastRun: { mode: string; score: number; wave: number; kills: number; banked: number; best: number; date: string } | null = null;
+function downloadShareCard(r: NonNullable<typeof lastRun>) {
+  const cv = document.createElement('canvas');
+  cv.width = 1080; cv.height = 608;
+  const ctx = cv.getContext('2d')!;
+  const font = (w: string, s: number) => `${w} ${s}px Rajdhani, "Microsoft YaHei", sans-serif`;
+  // 背景渐变 + 网格
+  const g = ctx.createLinearGradient(0, 0, 0, 608);
+  g.addColorStop(0, '#050810'); g.addColorStop(1, '#0b1524');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 1080, 608);
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.06)'; ctx.lineWidth = 1;
+  for (let x = 0; x <= 1080; x += 45) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 608); ctx.stroke(); }
+  for (let y = 0; y <= 608; y += 45) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(1080, y); ctx.stroke(); }
+  ctx.fillStyle = '#00f0ff'; ctx.fillRect(0, 0, 1080, 4);
+  ctx.fillStyle = '#ff2bd6'; ctx.fillRect(0, 604, 1080, 4);
+  // 标题区
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#00f0ff'; ctx.font = font('700', 46);
+  ctx.shadowColor = '#00f0ff'; ctx.shadowBlur = 18;
+  ctx.fillText('NEON STRIKE', 48, 80);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(140, 220, 235, 0.7)'; ctx.font = font('400', 20);
+  ctx.fillText('// 霓虹突袭 · 战绩卡', 48, 112);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#ffb300'; ctx.font = font('600', 24);
+  ctx.fillText(r.mode, 1032, 80);
+  ctx.fillStyle = 'rgba(207, 233, 239, 0.5)'; ctx.font = font('400', 18);
+  ctx.fillText(r.date, 1032, 110);
+  // 大字得分
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff'; ctx.font = font('700', 116);
+  ctx.shadowColor = '#ff2bd6'; ctx.shadowBlur = 32;
+  ctx.fillText(String(r.score), 540, 296);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(140, 220, 235, 0.7)'; ctx.font = font('400', 22);
+  ctx.fillText('最终得分 / FINAL SCORE', 540, 336);
+  // 数据行
+  const stats: [string, string][] = [
+    ['波次', String(r.wave)], ['击毁', String(r.kills)],
+    ['入库金币', `${r.banked}◆`], ['最高纪录', String(r.best)],
+  ];
+  stats.forEach(([k, v], i) => {
+    const x = 195 + i * 230;
+    ctx.fillStyle = 'rgba(140, 220, 235, 0.6)'; ctx.font = font('400', 20);
+    ctx.fillText(k, x, 432);
+    ctx.fillStyle = '#00f0ff'; ctx.font = font('700', 52);
+    ctx.fillText(v, x, 492);
+  });
+  ctx.fillStyle = 'rgba(140, 220, 235, 0.35)'; ctx.font = font('400', 16);
+  ctx.fillText('github.com/ruai0/neon-strike · 纯 TypeScript + Three.js 网页 FPS', 540, 568);
+  cv.toBlob((blob) => {
+    if (!blob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `neon-strike-${r.score}分-${r.mode}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  }, 'image/png');
+  toast('📸 战绩卡已生成并保存');
+}
+$('btn-share').addEventListener('click', () => {
+  if (!lastRun) { sfx.empty(); return; }
+  sfx.pickup();
+  downloadShareCard(lastRun);
+});
 $('btn-pause-menu').addEventListener('click', (e) => { e.stopPropagation(); sfx.init(); backToMenu(); });
 
 // 回到大厅（联机局内 / 结算界面）
@@ -2644,6 +2733,14 @@ function gameOver(board?: { name: string; score: number; kills: number }[], titl
   $('go-kills').textContent = String(kills);
   $('go-best').textContent = String(best);
   $('go-vault').textContent = `+${banked}◆`;
+  // 战绩卡数据快照（此时 dailyActive/weeklyMode 尚未清零）
+  lastRun = {
+    mode: mode === 'solo'
+      ? (weeklyMode ? '周挑战' : dailyActive ? '每日挑战' : (soloMode === 'survival' ? '限时生存' : soloMode === 'clear' ? '歼灭竞速' : '无尽波次'))
+      : mode === 'coop' ? '联机合作' : 'PvP 大乱斗',
+    score, wave, kills, banked, best,
+    date: new Date().toLocaleDateString('zh-CN'),
+  };
   $('btn-retry').textContent = mode === 'pvp' ? '再来一局' : '重新部署';
   $('btn-go-leave').classList.toggle('hidden', mode === 'solo');
   $('btn-go-menu').classList.toggle('hidden', mode !== 'solo');

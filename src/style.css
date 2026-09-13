@@ -808,6 +808,27 @@ kbd {
 .va-cost { margin-left: 10px; color: rgba(207, 233, 239, 0.35); letter-spacing: 1px; }
 .prog-tabs { display: flex; gap: 10px; justify-content: center; margin-bottom: 14px; }
 .prog-tabs b { color: var(--amber); margin-left: 4px; }
+.prog-overview {
+  width: min(460px, 100%); margin-inline: auto;
+  background: var(--panel); border: 1px solid rgba(0, 240, 255, 0.2);
+  border-left: 2px solid var(--cyan);
+  padding: 12px 16px; box-sizing: border-box;
+  margin-bottom: 4px;
+}
+.po-head {
+  font-family: var(--font-display); font-size: 14px; letter-spacing: 2px;
+  color: rgba(207, 233, 239, 0.8); margin-bottom: 10px;
+}
+.po-head b { color: var(--amber); font-size: 22px; text-shadow: 0 0 10px rgba(255, 179, 0, 0.5); }
+.po-items { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.po-item { min-width: 0; overflow: hidden; }
+.po-item span {
+  display: block; font-size: 11px; letter-spacing: 1px;
+  color: rgba(207, 233, 239, 0.55); margin-bottom: 5px; white-space: nowrap;
+}
+.po-item b { color: var(--cyan); font-family: var(--font-display); }
+.po-bar { height: 4px; background: rgba(0, 240, 255, 0.12); }
+.po-bar i { display: block; height: 100%; background: var(--cyan); box-shadow: 0 0 6px rgba(0, 240, 255, 0.6); transition: width 0.4s; }
 .save-io {
   width: 420px; max-width: 92vw; height: 90px; resize: vertical;
   background: rgba(0, 0, 0, 0.4); color: #cfe9ef;
