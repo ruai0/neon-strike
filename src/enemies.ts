@@ -8,81 +8,150 @@ function kindTexture(kind: EnemyKind): THREE.CanvasTexture {
   const hit = texCache.get(kind);
   if (hit) return hit;
   const cv = document.createElement('canvas');
-  cv.width = 128;
-  cv.height = 128;
+  cv.width = 256;
+  cv.height = 256;
   const ctx = cv.getContext('2d')!;
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, 128, 128);
-  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.lineWidth = 5;
+  ctx.fillRect(0, 0, 256, 256);
+  const line = (w: number) => { ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = w; };
+  const fill = (a: number) => { ctx.fillStyle = `rgba(0,0,0,${a})`; };
   switch (kind) {
-    case 'swarm':
-      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
-        ctx.beginPath(); ctx.arc(16 + x * 32, 16 + y * 32, 7, 0, Math.PI * 2); ctx.fill();
+    case 'swarm': {
+      // 蜂群：细密圆点阵 + 翼部斜纹
+      fill(0.45);
+      for (let y = 0; y < 6; y++) for (let x = 0; x < 6; x++) {
+        ctx.beginPath(); ctx.arc(24 + x * 42 + (y % 2 ? 21 : 0), 24 + y * 42, 8, 0, Math.PI * 2); ctx.fill();
+      }
+      line(4);
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath(); ctx.moveTo(i * 64, 0); ctx.lineTo(i * 64 + 40, 256); ctx.stroke();
       }
       break;
-    case 'drone':
-      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(128, 0); ctx.lineTo(64, 64); ctx.closePath(); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(128, 128); ctx.lineTo(0, 128); ctx.lineTo(64, 64); ctx.closePath(); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 128); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(128, 0); ctx.lineTo(128, 128); ctx.stroke();
-      break;
-    case 'sentry':
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        ctx.beginPath(); ctx.moveTo(64, 64); ctx.lineTo(64 + Math.cos(a) * 64, 64 + Math.sin(a) * 64); ctx.stroke();
-      }
-      ctx.beginPath(); ctx.arc(64, 64, 30, 0, Math.PI * 2); ctx.stroke();
-      break;
-    case 'tank':
-      ctx.lineWidth = 9;
-      for (let i = -4; i < 8; i++) {
-        ctx.beginPath(); ctx.moveTo(i * 24, 0); ctx.lineTo(i * 24 + 64, 128); ctx.stroke();
+    }
+    case 'drone': {
+      // 无人机：面板线 + 座舱圆 + 人字纹
+      line(4);
+      ctx.strokeRect(24, 24, 208, 208);
+      ctx.beginPath(); ctx.moveTo(24, 128); ctx.lineTo(232, 128); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(128, 24); ctx.lineTo(128, 232); ctx.stroke();
+      fill(0.5);
+      ctx.beginPath(); ctx.arc(128, 128, 34, 0, Math.PI * 2); ctx.fill();
+      line(5);
+      for (let i = 0; i < 4; i++) {
+        const y = 40 + i * 52;
+        ctx.beginPath(); ctx.moveTo(36, y + 18); ctx.lineTo(64, y); ctx.lineTo(92, y + 18); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(164, y + 18); ctx.lineTo(192, y); ctx.lineTo(220, y + 18); ctx.stroke();
       }
       break;
-    case 'elite':
-      ctx.lineWidth = 4;
+    }
+    case 'sentry': {
+      // 哨兵：辐射段 + 铆钉双环 + 中央炮口
+      line(5);
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        ctx.beginPath(); ctx.moveTo(128, 128); ctx.lineTo(128 + Math.cos(a) * 122, 128 + Math.sin(a) * 122); ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(128, 128, 52, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(128, 128, 84, 0, Math.PI * 2); ctx.stroke();
+      fill(0.5);
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        ctx.beginPath(); ctx.arc(128 + Math.cos(a) * 68, 128 + Math.sin(a) * 68, 6, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(128, 128, 22, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'tank': {
+      // 重装：警示斜纹 + 铆钉阵 + 大面板边框
+      ctx.save();
+      ctx.globalAlpha = 0.38;
+      ctx.fillStyle = '#000000';
+      for (let i = -8; i < 10; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * 40, 0); ctx.lineTo(i * 40 + 20, 0);
+        ctx.lineTo(i * 40 + 276, 256); ctx.lineTo(i * 40 + 256, 256);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+      line(7);
+      ctx.strokeRect(16, 16, 224, 224);
+      fill(0.55);
+      for (let y = 0; y < 7; y++) for (let x = 0; x < 7; x++) {
+        ctx.beginPath(); ctx.arc(28 + x * 34, 28 + y * 34, 5, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'elite': {
+      // 精英：六向星纹 + 同心面板 + 裂纹
+      line(5);
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2;
-        ctx.beginPath(); ctx.moveTo(64, 64); ctx.lineTo(64 + Math.cos(a) * 60, 64 + Math.sin(a) * 60); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(128, 128); ctx.lineTo(128 + Math.cos(a) * 120, 128 + Math.sin(a) * 120); ctx.stroke();
       }
-      ctx.beginPath(); ctx.arc(64, 64, 20, 0, Math.PI * 2); ctx.stroke();
+      for (const r of [40, 72, 104]) { ctx.beginPath(); ctx.arc(128, 128, r, 0, Math.PI * 2); ctx.stroke(); }
+      line(3);
+      ctx.beginPath(); ctx.moveTo(60, 40); ctx.lineTo(120, 130); ctx.lineTo(80, 210); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(200, 60); ctx.lineTo(150, 140); ctx.lineTo(210, 200); ctx.stroke();
+      fill(0.5);
+      ctx.beginPath(); ctx.arc(128, 128, 18, 0, Math.PI * 2); ctx.fill();
       break;
-    case 'boss':
-      ctx.lineWidth = 3;
-      for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) {
-        const cx = x * 32 + (y % 2 ? 16 : 0);
-        const cy = y * 28;
+    }
+    case 'boss': {
+      // 主宰：六边晶格 + 辐射能量缝 + 中央枢纽
+      line(4);
+      for (let y = 0; y < 6; y++) for (let x = 0; x < 6; x++) {
+        const cx = x * 46 + (y % 2 ? 23 : 0);
+        const cy = y * 42;
         ctx.beginPath();
         for (let k = 0; k <= 6; k++) {
           const a = (k / 6) * Math.PI * 2 + Math.PI / 6;
-          const px = cx + Math.cos(a) * 15;
-          const py = cy + Math.sin(a) * 15;
+          const px = cx + Math.cos(a) * 26;
+          const py = cy + Math.sin(a) * 26;
           if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
         }
         ctx.stroke();
       }
-      break;
-    case 'medic':
-      // 维修蜂：十字纹
-      ctx.lineWidth = 12;
-      ctx.beginPath(); ctx.moveTo(64, 6); ctx.lineTo(64, 122); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(6, 64); ctx.lineTo(122, 64); ctx.stroke();
-      ctx.beginPath(); ctx.arc(64, 64, 42, 0, Math.PI * 2); ctx.stroke();
-      break;
-    case 'bomber':
-      // 自爆蜂：警示三角纹
-      ctx.lineWidth = 6;
-      for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) {
-        ctx.beginPath();
-        ctx.moveTo(x * 44 + 20, y * 44 + 12);
-        ctx.lineTo(x * 44 + 4, y * 44 + 36);
-        ctx.lineTo(x * 44 + 36, y * 44 + 36);
-        ctx.closePath();
-        ctx.stroke();
+      fill(0.55);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        ctx.save();
+        ctx.translate(128, 128); ctx.rotate(a);
+        ctx.fillRect(60, -5, 60, 10);
+        ctx.restore();
       }
+      line(6);
+      ctx.beginPath(); ctx.arc(128, 128, 44, 0, Math.PI * 2); ctx.stroke();
       break;
+    }
+    case 'medic': {
+      // 维修蜂：粗十字 + 圆舱 + 上下格栅
+      line(10);
+      ctx.beginPath(); ctx.moveTo(128, 16); ctx.lineTo(128, 240); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(16, 128); ctx.lineTo(240, 128); ctx.stroke();
+      line(5);
+      ctx.beginPath(); ctx.arc(128, 128, 56, 0, Math.PI * 2); ctx.stroke();
+      fill(0.4);
+      for (let i = 0; i < 5; i++) ctx.fillRect(40 + i * 36, 44, 20, 14);
+      for (let i = 0; i < 5; i++) ctx.fillRect(40 + i * 36, 200, 20, 14);
+      break;
+    }
+    case 'bomber': {
+      // 自爆蜂：同心警示环 + 外圈三角纹
+      line(8);
+      for (const r of [36, 64, 92]) { ctx.beginPath(); ctx.arc(128, 128, r, 0, Math.PI * 2); ctx.stroke(); }
+      fill(0.5);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        ctx.save();
+        ctx.translate(128 + Math.cos(a) * 110, 128 + Math.sin(a) * 110);
+        ctx.rotate(a + Math.PI / 2);
+        ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(-14, 12); ctx.lineTo(14, 12); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      fill(0.6);
+      ctx.beginPath(); ctx.arc(128, 128, 16, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
   }
   const tex = new THREE.CanvasTexture(cv);
   texCache.set(kind, tex);
@@ -138,9 +207,10 @@ export class Enemy {
   chargeDir = new THREE.Vector3();
 
   private core: THREE.Mesh;
-  private shellMat: THREE.MeshBasicMaterial;
+  private shellMat: THREE.MeshStandardMaterial;
   private baseColor = new THREE.Color();
   private coreMat: THREE.MeshStandardMaterial;
+  private spinParts: THREE.Mesh[] = [];
   private aura: THREE.Mesh | null = null;
   private hpBarGroup = new THREE.Group();
   private hpFill: THREE.Mesh;
@@ -152,12 +222,13 @@ export class Enemy {
     const cfg = KIND_CFG[kind];
     this.hp = cfg.hp;
     this.maxHp = cfg.hp;
-    // 自发光亮色实体（黑底可见）× 专属暗纹贴图 + 暗色描边：亮体剪影 + 纹理细节
-    const tint = new THREE.Color(cfg.color).multiplyScalar(0.82);
-    const bodyMat = () => {
-      const m = new THREE.MeshBasicMaterial({ color: tint, map: kindTexture(kind) });
-      return m;
-    };
+    // 亮色金属实体：受场景光照产生体积明暗，微自发光保证暗图可见
+    const tint = new THREE.Color(cfg.color);
+    const bodyMat = () => new THREE.MeshStandardMaterial({
+      color: tint, map: kindTexture(kind),
+      roughness: 0.5, metalness: 0.2,
+      emissive: cfg.color, emissiveIntensity: 0.28,
+    });
     const edgeMat = () => new THREE.LineBasicMaterial({ color: 0x04070c, transparent: true, opacity: 0.85 });
     const coreMat = (s: number) => new THREE.MeshStandardMaterial({ color: cfg.color, emissive: cfg.color, emissiveIntensity: 1.5, roughness: 0.3 });
     const edged = (geo: THREE.BufferGeometry) => {
@@ -165,60 +236,138 @@ export class Enemy {
       body.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat()));
       return body;
     };
+    // 部件动画：updateVisual 按 userData.spin 转速旋转
+    const spin = (m: THREE.Mesh, s: number) => { m.userData.spin = s; this.spinParts.push(m); };
 
     let shell: THREE.Mesh;
     let core: THREE.Mesh;
 
     switch (kind) {
       case 'swarm': {
-        // 蜂群：小三棱锥
+        // 蜂群：小三棱锥 + 双翼板 + 底部推进光锥
         shell = edged(new THREE.TetrahedronGeometry(cfg.r * 1.5, 0));
+        const finG = new THREE.BoxGeometry(cfg.r * 1.1, 0.05, cfg.r * 0.5);
+        const finL = new THREE.Mesh(finG, bodyMat());
+        finL.position.set(-cfg.r * 0.7, 0, 0); finL.rotation.z = 0.5;
+        const finR = new THREE.Mesh(finG, bodyMat());
+        finR.position.set(cfg.r * 0.7, 0, 0); finR.rotation.z = -0.5;
+        const jet = new THREE.Mesh(new THREE.ConeGeometry(cfg.r * 0.28, cfg.r * 0.7, 6), coreMat(1));
+        jet.rotation.x = Math.PI;
+        jet.position.y = -cfg.r * 0.9;
+        shell.add(finL, finR, jet);
         core = new THREE.Mesh(new THREE.TetrahedronGeometry(cfg.r * 0.45, 0), coreMat(cfg.r * 0.45));
         break;
       }
+      case 'drone': {
+        // 无人机：二十面体 + 座舱罩 + 双侧推进舱
+        shell = edged(new THREE.IcosahedronGeometry(cfg.r, 0));
+        const canopy = new THREE.Mesh(
+          new THREE.SphereGeometry(cfg.r * 0.42, 10, 8),
+          new THREE.MeshStandardMaterial({ color: 0x0a1420, roughness: 0.15, metalness: 0.6, emissive: cfg.color, emissiveIntensity: 0.5 }),
+        );
+        canopy.position.set(0, cfg.r * 0.5, cfg.r * 0.2);
+        const podG = new THREE.CylinderGeometry(cfg.r * 0.16, cfg.r * 0.22, cfg.r * 0.8, 6);
+        const podL = new THREE.Mesh(podG, bodyMat());
+        podL.rotation.z = Math.PI / 2; podL.position.set(-cfg.r * 1.05, -cfg.r * 0.2, 0);
+        const podR = new THREE.Mesh(podG, bodyMat());
+        podR.rotation.z = Math.PI / 2; podR.position.set(cfg.r * 1.05, -cfg.r * 0.2, 0);
+        shell.add(canopy, podL, podR);
+        core = new THREE.Mesh(new THREE.OctahedronGeometry(cfg.r * 0.4, 0), coreMat(cfg.r * 0.4));
+        break;
+      }
       case 'sentry': {
-        // 哨兵：水平陀螺炮环
+        // 哨兵：水平陀螺炮环 + 径向主炮 + 三块装甲板 + 炮口光环
         shell = new THREE.Mesh(new THREE.TorusGeometry(cfg.r * 0.95, 0.16, 10, 28), bodyMat());
         shell.rotation.x = Math.PI / 2;
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(cfg.r * 0.12, cfg.r * 0.16, cfg.r * 1.1, 8), bodyMat());
+        barrel.rotation.z = -Math.PI / 2;
+        barrel.position.set(cfg.r * 1.2, 0, 0.1);
+        for (let p = 0; p < 3; p++) {
+          const a = (p / 3) * Math.PI * 2;
+          const plate = new THREE.Mesh(new THREE.BoxGeometry(cfg.r * 0.5, cfg.r * 0.14, cfg.r * 0.5), bodyMat());
+          plate.position.set(Math.cos(a) * cfg.r * 0.72, Math.sin(a) * cfg.r * 0.72, 0.12);
+          shell.add(plate);
+        }
+        const muzzle = new THREE.Mesh(new THREE.TorusGeometry(cfg.r * 0.18, 0.03, 6, 14), coreMat(1));
+        muzzle.rotation.y = Math.PI / 2;
+        muzzle.position.set(cfg.r * 1.78, 0, 0.1);
+        shell.add(barrel, muzzle);
         core = new THREE.Mesh(new THREE.SphereGeometry(cfg.r * 0.4, 12, 10), coreMat(cfg.r * 0.4));
         break;
       }
       case 'tank': {
-        // 重装：厚重装甲方块（警示斜纹）
+        // 重装：厚甲方块 + 四角护柱 + 顶部发光格栅
         shell = edged(new THREE.BoxGeometry(cfg.r * 1.75, cfg.r * 1.75, cfg.r * 1.75));
+        const slab = new THREE.BoxGeometry(cfg.r * 0.6, cfg.r * 1.95, cfg.r * 0.6);
+        for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as [number, number][]) {
+          const s = new THREE.Mesh(slab, bodyMat());
+          s.position.set(sx * cfg.r * 0.85, 0, sz * cfg.r * 0.85);
+          shell.add(s);
+        }
+        const vent = new THREE.Mesh(new THREE.BoxGeometry(cfg.r * 1.1, cfg.r * 0.16, cfg.r * 0.5), coreMat(1));
+        vent.position.y = cfg.r * 0.95;
+        shell.add(vent);
         core = new THREE.Mesh(new THREE.BoxGeometry(cfg.r * 0.7, cfg.r * 0.7, cfg.r * 0.7), coreMat(cfg.r * 0.7));
         break;
       }
       case 'elite': {
-        // 精英：大八面体（星纹）
+        // 精英：大八面体 + 旋转刀环（3 片轨道刃）
         shell = edged(new THREE.OctahedronGeometry(cfg.r * 1.05, 0));
+        const bladeRing = new THREE.Mesh(new THREE.TorusGeometry(cfg.r * 1.35, 0.05, 8, 32), bodyMat());
+        spin(bladeRing, 2.2);
+        for (let b = 0; b < 3; b++) {
+          const a = (b / 3) * Math.PI * 2;
+          const blade = new THREE.Mesh(new THREE.BoxGeometry(cfg.r * 0.55, 0.08, cfg.r * 0.2), bodyMat());
+          blade.position.set(Math.cos(a) * cfg.r * 1.35, 0, Math.sin(a) * cfg.r * 1.35);
+          blade.rotation.y = -a;
+          bladeRing.add(blade);
+        }
+        shell.add(bladeRing);
         core = new THREE.Mesh(new THREE.OctahedronGeometry(cfg.r * 0.5, 0), coreMat(cfg.r * 0.5));
         break;
       }
       case 'boss': {
-        // 核心主宰：大壳（六边纹） + 双实体陀螺环
+        // 核心主宰：大壳 + 双实体陀螺环（对转） + 四角炮座
         shell = edged(new THREE.IcosahedronGeometry(cfg.r * 0.95, 0));
         const ring1 = new THREE.Mesh(new THREE.TorusGeometry(cfg.r * 1.2, 0.09, 10, 44), bodyMat());
         ring1.rotation.x = Math.PI / 2.3;
         const ring2 = new THREE.Mesh(new THREE.TorusGeometry(cfg.r * 1.42, 0.06, 10, 44), bodyMat());
         ring2.rotation.set(Math.PI / 1.8, 0.6, 0);
         shell.add(ring1, ring2);
+        spin(ring1, 1.6);
+        spin(ring2, -1.1);
+        for (let p = 0; p < 4; p++) {
+          const a = (p / 4) * Math.PI * 2 + Math.PI / 4;
+          const pod = new THREE.Mesh(new THREE.BoxGeometry(cfg.r * 0.3, cfg.r * 0.3, cfg.r * 0.55), bodyMat());
+          pod.position.set(Math.cos(a) * cfg.r * 0.95, p % 2 ? 0.35 : -0.35, Math.sin(a) * cfg.r * 0.95);
+          pod.lookAt(0, 0, 0);
+          const tip = new THREE.Mesh(new THREE.SphereGeometry(cfg.r * 0.1, 6, 6), coreMat(1));
+          tip.position.set(0, 0, cfg.r * 0.32);
+          pod.add(tip);
+          shell.add(pod);
+        }
         core = new THREE.Mesh(new THREE.IcosahedronGeometry(cfg.r * 0.42, 0), coreMat(cfg.r * 0.42));
         break;
       }
       case 'medic': {
-        // 维修蜂：十字机匣 + 光环
+        // 维修蜂：十字机匣 + 旋转发光光环 + 双侧药剂舱
         shell = edged(new THREE.BoxGeometry(cfg.r * 1.5, cfg.r * 0.5, cfg.r * 0.5));
         const bar2 = new THREE.Mesh(new THREE.BoxGeometry(cfg.r * 0.5, cfg.r * 0.5, cfg.r * 1.5), bodyMat());
         bar2.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(cfg.r * 0.5, cfg.r * 0.5, cfg.r * 1.5)), edgeMat()));
-        const halo = new THREE.Mesh(new THREE.TorusGeometry(cfg.r * 1.05, 0.05, 8, 26), bodyMat());
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(cfg.r * 1.05, 0.05, 8, 26), coreMat(1));
         halo.rotation.x = Math.PI / 2;
         shell.add(bar2, halo);
+        spin(halo, 2.5);
+        for (const sx of [-1, 1]) {
+          const tank = new THREE.Mesh(new THREE.CylinderGeometry(cfg.r * 0.18, cfg.r * 0.18, cfg.r * 0.7, 8), bodyMat());
+          tank.position.set(sx * cfg.r * 0.95, -cfg.r * 0.15, 0);
+          shell.add(tank);
+        }
         core = new THREE.Mesh(new THREE.OctahedronGeometry(cfg.r * 0.42, 0), coreMat(cfg.r * 0.42));
         break;
       }
       case 'bomber': {
-        // 自爆蜂：球体 + 尖刺
+        // 自爆蜂：球体尖刺 + 尾翼 + 顶部引信灯（接近时闪烁）
         shell = new THREE.Mesh(new THREE.SphereGeometry(cfg.r * 0.9, 10, 8), bodyMat());
         for (let s = 0; s < 6; s++) {
           const a = (s / 6) * Math.PI * 2;
@@ -227,6 +376,16 @@ export class Enemy {
           spike.rotation.z = -a + Math.PI / 2;
           shell.add(spike);
         }
+        const finG = new THREE.BoxGeometry(0.04, cfg.r * 0.6, cfg.r * 0.45);
+        for (const sx of [-1, 1]) {
+          const fin = new THREE.Mesh(finG, bodyMat());
+          fin.position.set(sx * cfg.r * 0.85, 0, cfg.r * 0.75);
+          fin.rotation.y = sx * 0.5;
+          shell.add(fin);
+        }
+        const fuse = new THREE.Mesh(new THREE.SphereGeometry(cfg.r * 0.16, 6, 6), coreMat(1));
+        fuse.position.y = cfg.r * 1.0;
+        shell.add(fuse);
         core = new THREE.Mesh(new THREE.SphereGeometry(cfg.r * 0.4, 8, 6), coreMat(cfg.r * 0.4));
         break;
       }
@@ -237,7 +396,7 @@ export class Enemy {
       }
     }
 
-    this.shellMat = shell.material as THREE.MeshBasicMaterial;
+    this.shellMat = shell.material as THREE.MeshStandardMaterial;
     this.baseColor = (shell.material as THREE.MeshBasicMaterial).color.clone();
     this.core = core;
     this.coreMat = core.material as THREE.MeshStandardMaterial;
@@ -323,6 +482,12 @@ export class Enemy {
     this.core.rotation.z -= dt * 2;
     this.bobPhase += dt * 2;
     this.applyFlash(dt);
+    // 部件动画：刀环/陀螺环/维修光环按各自转速旋转
+    for (const p of this.spinParts) p.rotation.z += dt * (p.userData.spin as number);
+    // 自爆蜂核心呼吸（接近玩家时另有 blink 白闪预警）
+    if (this.kind === 'bomber' && this.flashT <= 0) {
+      this.coreMat.emissiveIntensity = 1.5 + Math.sin(this.bobPhase * 6) * 0.8;
+    }
 
     if (netDriven) this.position.lerp(this.netTarget, Math.min(dt * 10, 1));
 
