@@ -63,7 +63,7 @@ function createRoom(mode) {
   const code = makeCode();
   const room = {
     code, mode,
-    map: Math.floor(Math.random() * 3),
+    map: Math.floor(Math.random() * 5),
     state: 'waiting', // waiting | playing
     host: null,
     players: new Map(),
@@ -282,7 +282,7 @@ wss.on('connection', (ws, req) => {
       case 'set_map': {
         const room = player.room;
         if (!room || room.host !== id || room.state === 'playing') return;
-        room.map = Math.max(0, Math.min(2, Number(m.map) || 0));
+        room.map = Math.max(0, Math.min(4, Number(m.map) || 0));
         broadcastRoomUpdate(room);
         return;
       }

@@ -65,8 +65,8 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x030409);
-scene.fog = new THREE.FogExp2(0x030409, 0.02);
+scene.background = new THREE.Color(0x060a12);
+scene.fog = new THREE.FogExp2(0x060a12, 0.013);
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 300);
 camera.rotation.order = 'YXZ';
@@ -78,14 +78,15 @@ composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight),
 composer.addPass(new OutputPass());
 
 // ---------- 灯光 ----------
-scene.add(new THREE.HemisphereLight(0x224466, 0x080810, 0.7));
-const keyLight = new THREE.DirectionalLight(0x88aaff, 0.5);
+const hemiLight = new THREE.HemisphereLight(0x3a5a80, 0x18202c, 1.0);
+scene.add(hemiLight);
+const keyLight = new THREE.DirectionalLight(0x88aaff, 0.95);
 keyLight.position.set(10, 20, 6);
 scene.add(keyLight);
-const magLight = new THREE.PointLight(MAGENTA, 40, 50);
+const magLight = new THREE.PointLight(MAGENTA, 65, 55);
 magLight.position.set(-20, 8, -20);
 scene.add(magLight);
-const cyanLight = new THREE.PointLight(CYAN, 40, 50);
+const cyanLight = new THREE.PointLight(CYAN, 65, 55);
 cyanLight.position.set(20, 8, 20);
 scene.add(cyanLight);
 const boomLight = new THREE.PointLight(AMBER, 0, 30);
@@ -96,10 +97,11 @@ const collidables: THREE.Object3D[] = [];
 const pillarXZ: { x: number; z: number; r: number }[] = [];
 const wallRects: { x: number; z: number; hw: number; hd: number; rot: number }[] = [];
 const jumpPads: { x: number; z: number; mesh: THREE.Group }[] = [];
-const mapNames = ['玄岩要塞', '环塔竞技场', '峡谷废墟'];
+const mapNames = ['玄岩要塞', '环塔竞技场', '峡谷废墟', '熔火工厂', '极地观测站'];
 let mapIdx = 0;
 const mapObjects: THREE.Object3D[] = [];
 let horizonRef: THREE.Mesh | null = null;
+let floorRef: THREE.Mesh | null = null;
 // 动画对象缓存（避免每帧全场景遍历）
 const fxRings: THREE.Mesh[] = [];
 const fxPulses: THREE.Mesh[] = [];
@@ -157,12 +159,13 @@ function hitsStatic(p: THREE.Vector3): boolean {
 {
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(ARENA_HALF * 2, ARENA_HALF * 2),
-    new THREE.MeshStandardMaterial({ color: 0x05070d, roughness: 0.35, metalness: 0.85 }),
+    new THREE.MeshStandardMaterial({ color: 0x0e141d, roughness: 0.35, metalness: 0.85 }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.userData.surface = true;
   scene.add(floor);
   collidables.push(floor);
+  floorRef = floor;
 
   const starGeo = new THREE.BufferGeometry();
   const starPos = new Float32Array(900 * 3);
@@ -204,7 +207,7 @@ function hitsStatic(p: THREE.Vector3): boolean {
     const pad = new THREE.Group();
     const base = new THREE.Mesh(
       new THREE.CylinderGeometry(1.25, 1.45, 0.14, 24),
-      new THREE.MeshStandardMaterial({ color: 0x0a2018, roughness: 0.3, metalness: 0.8 }),
+      new THREE.MeshStandardMaterial({ color: 0x14301f, roughness: 0.3, metalness: 0.8 }),
     );
     base.position.y = 0.07;
     const glow = new THREE.Mesh(
@@ -251,7 +254,7 @@ function addMapObj(o: THREE.Object3D, solid = true) {
 function addPillar(x: number, z: number, i: number, h = 4 + (i % 3)) {
   const pillar = new THREE.Mesh(
     new THREE.BoxGeometry(2.2, h, 2.2),
-    new THREE.MeshStandardMaterial({ color: 0x0a0f1a, roughness: 0.5, metalness: 0.7 }),
+    new THREE.MeshStandardMaterial({ color: 0x161e2a, roughness: 0.5, metalness: 0.7 }),
   );
   pillar.position.set(x, h / 2, z);
   pillar.userData.surface = true;
@@ -280,18 +283,20 @@ function buildMap(idx: number) {
   pillarXZ.length = 0;
   wallRects.length = 0;
   collidables.length = 1; // 仅保留地板
-  mapIdx = ((idx % 3) + 3) % 3;
+  mapIdx = ((idx % mapNames.length) + mapNames.length) % mapNames.length;
 
-  // 主题配色：网格 / 边墙 / 雾 / 地平线
+  // 主题配色：网格 / 边墙 / 雾 / 地平线 / 地板 / 环境光（每图独立基调）
   const themes = [
-    { g1: CYAN, g2: 0x0a2a33, edge: CYAN, fog: 0x030409, horizon: 0x082433 },
-    { g1: MAGENTA, g2: 0x2a0a22, edge: MAGENTA, fog: 0x0a0412, horizon: 0x220833 },
-    { g1: AMBER, g2: 0x2a200a, edge: AMBER, fog: 0x0c0803, horizon: 0x2a1d06 },
+    { g1: CYAN,     g2: 0x123642, edge: CYAN,     fog: 0x060a12, horizon: 0x0a2c3e, floor: 0x0e141d, hemi: 1.0 },
+    { g1: MAGENTA,  g2: 0x3a1430, edge: MAGENTA,  fog: 0x0e0716, horizon: 0x26093a, floor: 0x120e1a, hemi: 1.0 },
+    { g1: AMBER,    g2: 0x3a2c10, edge: AMBER,    fog: 0x100b05, horizon: 0x2e2008, floor: 0x17120b, hemi: 1.0 },
+    { g1: 0xff7a3c, g2: 0x3a2410, edge: 0xff7a3c, fog: 0x160d06, horizon: 0x301608, floor: 0x1c120a, hemi: 1.15 },
+    { g1: 0x9fe8ff, g2: 0x2e4a58, edge: 0x9fe8ff, fog: 0x18262f, horizon: 0x28434f, floor: 0x1e2e38, hemi: 1.4 },
   ];
   const th = themes[mapIdx];
   const grid = new THREE.GridHelper(ARENA_HALF * 2, 36, th.g1, th.g2);
   (grid.material as THREE.Material).transparent = true;
-  (grid.material as THREE.Material).opacity = 0.33;
+  (grid.material as THREE.Material).opacity = 0.4;
   grid.position.y = 0.01;
   addMapObj(grid, false);
   const wallEdges = new THREE.LineSegments(
@@ -303,12 +308,14 @@ function buildMap(idx: number) {
   (scene.fog as THREE.FogExp2).color.setHex(th.fog);
   scene.background = new THREE.Color(th.fog);
   if (horizonRef) (horizonRef.material as THREE.MeshBasicMaterial).color.setHex(th.horizon);
+  if (floorRef) (floorRef.material as THREE.MeshStandardMaterial).color.setHex(th.floor);
+  hemiLight.intensity = th.hemi;
 
   if (mapIdx === 0) {
     // 玄岩要塞：中央六角舞台 + 8 柱
     const stage = new THREE.Mesh(
       new THREE.CylinderGeometry(5, 5.6, 0.5, 6),
-      new THREE.MeshStandardMaterial({ color: 0x0a1018, roughness: 0.4, metalness: 0.8 }),
+      new THREE.MeshStandardMaterial({ color: 0x182230, roughness: 0.4, metalness: 0.8 }),
     );
     stage.position.y = 0.25;
     stage.userData.surface = true;
@@ -327,7 +334,7 @@ function buildMap(idx: number) {
     // 环塔竞技场：中央高塔（绕柱环绕战） + 环形柱阵
     const tower = new THREE.Mesh(
       new THREE.CylinderGeometry(2.6, 3.0, 6, 12),
-      new THREE.MeshStandardMaterial({ color: 0x0a1018, roughness: 0.35, metalness: 0.85 }),
+      new THREE.MeshStandardMaterial({ color: 0x182230, roughness: 0.35, metalness: 0.85 }),
     );
     tower.position.y = 3;
     tower.userData.surface = true;
@@ -360,7 +367,7 @@ function buildMap(idx: number) {
       const a = (i / 10) * Math.PI * 2;
       addPillar(Math.round(Math.cos(a) * 17), Math.round(Math.sin(a) * 17), i, 3.5 + (i % 3));
     }
-  } else {
+  } else if (mapIdx === 2) {
     // 峡谷废墟：长墙巷道 + 散落掩体
     const walls: [number, number, number][] = [
       [-9, 0, 0], [9, 0, 0], [0, -13, Math.PI / 2], [0, 13, Math.PI / 2],
@@ -368,7 +375,7 @@ function buildMap(idx: number) {
     walls.forEach(([x, z, ry]) => {
       const wall = new THREE.Mesh(
         new THREE.BoxGeometry(14, 4.2, 1.6),
-        new THREE.MeshStandardMaterial({ color: 0x120e08, roughness: 0.6, metalness: 0.6 }),
+        new THREE.MeshStandardMaterial({ color: 0x231a10, roughness: 0.6, metalness: 0.6 }),
       );
       wall.position.set(x, 2.1, z);
       wall.rotation.y = ry;
@@ -391,7 +398,7 @@ function buildMap(idx: number) {
       if (Math.abs(rx) < 10 && Math.abs(rz) < 10) continue;
       const rubble = new THREE.Mesh(
         new THREE.BoxGeometry(0.5 + Math.random() * 0.9, 0.3 + Math.random() * 0.5, 0.5 + Math.random() * 0.9),
-        new THREE.MeshStandardMaterial({ color: 0x1a140a, roughness: 0.8, metalness: 0.4 }),
+        new THREE.MeshStandardMaterial({ color: 0x2b2214, roughness: 0.8, metalness: 0.4 }),
       );
       rubble.position.set(rx, 0.2, rz);
       rubble.rotation.y = Math.random() * Math.PI;
@@ -399,6 +406,139 @@ function buildMap(idx: number) {
     }
     const cubes: [number, number][] = [[-18, -14], [18, 14], [-18, 14], [18, -14], [0, 0]];
     cubes.forEach(([x, z], i) => addPillar(x, z, i, 3 + (i % 2)));
+  } else if (mapIdx === 3) {
+    // 熔火工厂：中央熔炉 + 传送长廊 + 炉体方块阵（暖橙主题）
+    const furnace = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.6, 4.2, 2.4, 10),
+      new THREE.MeshStandardMaterial({ color: 0x241610, roughness: 0.5, metalness: 0.7 }),
+    );
+    furnace.position.y = 1.2;
+    furnace.userData.surface = true;
+    addMapObj(furnace);
+    pillarXZ.push({ x: 0, z: 0, r: 4.6 });
+    const furnaceEdge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.CylinderGeometry(3.6, 4.2, 2.4, 10)),
+      new THREE.LineBasicMaterial({ color: 0xff7a3c, transparent: true, opacity: 0.9 }),
+    );
+    furnaceEdge.position.y = 1.2;
+    addMapObj(furnaceEdge, false);
+    const lavaTop = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.2, 3.2, 0.12, 10),
+      new THREE.MeshStandardMaterial({ color: 0xff7a3c, emissive: 0xff7a3c, emissiveIntensity: 1.4 }),
+    );
+    lavaTop.position.y = 2.5;
+    addMapObj(lavaTop, false);
+    // 两条传送长廊（真实矩形碰撞）
+    const lanes: [number, number, number][] = [[-14, 0, 0], [14, 0, 0]];
+    lanes.forEach(([x, z, ry]) => {
+      const lane = new THREE.Mesh(
+        new THREE.BoxGeometry(16, 2.6, 1.8),
+        new THREE.MeshStandardMaterial({ color: 0x241610, roughness: 0.55, metalness: 0.65 }),
+      );
+      lane.position.set(x, 1.3, z);
+      lane.rotation.y = ry;
+      lane.userData.surface = true;
+      addMapObj(lane);
+      const edge = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(16, 2.6, 1.8)),
+        new THREE.LineBasicMaterial({ color: 0xff7a3c, transparent: true, opacity: 0.85 }),
+      );
+      edge.position.copy(lane.position);
+      edge.rotation.y = ry;
+      addMapObj(edge, false);
+      const strip = new THREE.Mesh(
+        new THREE.BoxGeometry(15.4, 0.12, 0.1),
+        new THREE.MeshStandardMaterial({ color: 0xff9a50, emissive: 0xff9a50, emissiveIntensity: 1.0 }),
+      );
+      strip.position.y = 1.35;
+      lane.add(strip);
+      wallRects.push({ x, z, hw: 8, hd: 0.9, rot: ry });
+    });
+    // 地面熔岩辉光碟（装饰）
+    for (const [x, z] of [[8, 8], [-8, -8], [8, -8], [-8, 8]] as [number, number][]) {
+      const disc = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.6, 1.6, 0.06, 20),
+        new THREE.MeshStandardMaterial({ color: 0xff7a3c, emissive: 0xff5a20, emissiveIntensity: 0.9 }),
+      );
+      disc.position.set(x, 0.03, z);
+      addMapObj(disc, false);
+    }
+    // 四角炉体方块
+    const furnSpots: [number, number][] = [[-20, -16], [20, 16], [-20, 16], [20, -16]];
+    furnSpots.forEach(([x, z], i) => addPillar(x, z, i, 4));
+  } else {
+    // 极地观测站：中央圆顶基地 + 冰晶柱环 + 科研舱（明亮冰蓝主题）
+    const bldg = new THREE.Mesh(
+      new THREE.CylinderGeometry(5.2, 5.8, 1.1, 12),
+      new THREE.MeshStandardMaterial({ color: 0x2a3f4e, roughness: 0.45, metalness: 0.6 }),
+    );
+    bldg.position.y = 0.55;
+    bldg.userData.surface = true;
+    addMapObj(bldg);
+    pillarXZ.push({ x: 0, z: 0, r: 6.2 });
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(3.4, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x334e60, roughness: 0.3, metalness: 0.5 }),
+    );
+    dome.position.y = 1.1;
+    dome.userData.surface = true;
+    addMapObj(dome);
+    const domeEdge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.SphereGeometry(3.4, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2)),
+      new THREE.LineBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.9 }),
+    );
+    domeEdge.position.y = 1.1;
+    addMapObj(domeEdge, false);
+    // 八方冰晶柱
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const x = Math.round(Math.cos(a) * 17);
+      const z = Math.round(Math.sin(a) * 17);
+      const h = 4.5 + (i % 3);
+      const crystal = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.5, 1.1, h, 5),
+        new THREE.MeshStandardMaterial({ color: 0x2e4756, roughness: 0.35, metalness: 0.4 }),
+      );
+      crystal.position.set(x, h / 2, z);
+      crystal.userData.surface = true;
+      addMapObj(crystal);
+      const ce = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.CylinderGeometry(0.5, 1.1, h, 5)),
+        new THREE.LineBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.85 }),
+      );
+      ce.position.copy(crystal.position);
+      addMapObj(ce, false);
+      pillarXZ.push({ x, z, r: 1.4 });
+    }
+    // 两条科研舱长墙（真实矩形碰撞）
+    const pods: [number, number, number][] = [[0, -16, Math.PI / 2], [0, 16, Math.PI / 2]];
+    pods.forEach(([x, z, ry]) => {
+      const pod = new THREE.Mesh(
+        new THREE.BoxGeometry(12, 3.4, 2.2),
+        new THREE.MeshStandardMaterial({ color: 0x2a3f4e, roughness: 0.5, metalness: 0.6 }),
+      );
+      pod.position.set(x, 1.7, z);
+      pod.rotation.y = ry;
+      pod.userData.surface = true;
+      addMapObj(pod);
+      const pe = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(12, 3.4, 2.2)),
+        new THREE.LineBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.85 }),
+      );
+      pe.position.copy(pod.position);
+      pe.rotation.y = ry;
+      addMapObj(pe, false);
+      wallRects.push({ x, z, hw: 6, hd: 1.1, rot: ry });
+    });
+    // 极光竖带（装饰）
+    for (const [x, z] of [[-24, 0], [24, 0], [0, -24]] as [number, number][]) {
+      const aur = new THREE.Mesh(
+        new THREE.BoxGeometry(0.4, 9, 0.4),
+        new THREE.MeshStandardMaterial({ color: 0x7fd8ff, emissive: 0x7fd8ff, emissiveIntensity: 1.1 }),
+      );
+      aur.position.set(x, 4.5, z);
+      addMapObj(aur, false);
+    }
   }
 }
 
@@ -2248,7 +2388,7 @@ function startGame(m: Mode, map?: number) {
   challengeDiff = useChallenge ? pendingChallenge.diff : 0;
   clearWorld();
   resetLocalRun();
-  buildMap(m === 'solo' ? Math.floor(Math.random() * 3) : (map ?? 0));
+  buildMap(m === 'solo' ? Math.floor(Math.random() * mapNames.length) : (map ?? 0));
 
   elMenu.classList.add('hidden');
   elOver.classList.add('hidden');
@@ -3763,7 +3903,7 @@ function startDailyRun() {
   const now = new Date();
   const seed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
   const rng = mulberry32(seed);
-  const map = Math.floor(rng() * 3);
+  const map = Math.floor(rng() * mapNames.length);
   const pool = [...DAILY_MODS_POOL];
   dailyMods = [];
   for (let i = 0; i < 2; i++) dailyMods.push(pool.splice(Math.floor(rng() * pool.length), 1)[0].id);
