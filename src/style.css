@@ -766,6 +766,8 @@ kbd {
 }
 .slot-tag.on { color: var(--amber); border-color: rgba(255, 179, 0, 0.4); }
 .va-cost { margin-left: 10px; color: rgba(207, 233, 239, 0.35); letter-spacing: 1px; }
+.prog-tabs { display: flex; gap: 10px; justify-content: center; margin-bottom: 14px; }
+.prog-tabs b { color: var(--amber); margin-left: 4px; }
 
 /* 设置面板 */
 .setting-row {

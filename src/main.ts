@@ -1524,7 +1524,7 @@ let xp = Number(localStorage.getItem('ns-xp') ?? 0);
 function getRank() { return Math.max(1, Math.floor(Math.sqrt(xp / 80))); }
 
 function commitXp() {
-  xp += Math.max(0, Math.round(score / 10));
+  xp += Math.max(0, Math.round(score / 10 * (1 + 0.06 * perks.xp)));
   localStorage.setItem('ns-xp', String(xp));
 }
 
@@ -1609,6 +1609,14 @@ const ACH_DEFS: { id: string; name: string; desc: string; reward: number; test: 
   { id: 'maxgun', name: '枪械大师',       desc: '任意武器熟练度达到 III',    reward: 200, test: () => ALL_WEAPONS.some((w) => weaponLv[w] >= 3) },
   { id: 'rich',   name: '竞技场富豪',     desc: '单局持有金币达到 500',      reward: 100, test: () => coins >= 500 },
   { id: 'allgun', name: '军火贩子',       desc: '单局集齐全部 5 把武器',     reward: 250, test: () => owned.length >= 5 },
+  // 养成向长线成就
+  { id: 'loadout2', name: '双枪出征',     desc: '出战装配两把武器',          reward: 150, test: () => vault.loadout.length >= 2 },
+  { id: 'mast_full', name: '人枪合一',    desc: '任意武器精通达到仓库 III',  reward: 300, test: () => ALL_WEAPONS.some((w) => (vault.mastery[w] ?? 0) >= 3) },
+  { id: 'forge3',   name: '精工锻造',     desc: '任意武器 3 条词缀槽全锻',   reward: 300, test: () => ALL_WEAPONS.some((w) => (vault.affix[w]?.length ?? 0) >= 3) },
+  { id: 'meta_max', name: '深谋远虑',     desc: '任一元升级树升到满级',      reward: 250, test: () => META_DEFS.some((m) => metaLv(m.key) >= m.max) },
+  { id: 'vault_all', name: '军备收藏家',  desc: '仓库解锁全部 8 把武器',     reward: 400, test: () => vault.weapons.length >= 8 },
+  { id: 'w15',      name: '十五波守望',   desc: '单局到达第 15 波',          reward: 400, test: () => wave >= 15 },
+  { id: 's50k',     name: '五万分传说',   desc: '单局得分达到 50000',        reward: 500, test: () => score >= 50000 },
 ];
 let bossKills = 0;
 let lowHpTime = 0;
@@ -1647,21 +1655,44 @@ $('btn-stats').addEventListener('click', () => renderAchPanel('stats'));
 $('btn-achv-close').addEventListener('click', () => $('achv').classList.add('hidden'));
 
 // ---------- 军械库（永久商店，花经验） ----------
-interface Perks { armor: number; pay: number; fire: number; tactic: number; }
-let perks: Perks = JSON.parse(localStorage.getItem('ns-perks') ?? '{"armor":0,"pay":0,"fire":0,"tactic":0}');
+interface Perks { armor: number; pay: number; fire: number; tactic: number; magnet: number; dash: number; xp: number; }
+let perks: Perks = (() => {
+  const def: Perks = { armor: 0, pay: 0, fire: 0, tactic: 0, magnet: 0, dash: 0, xp: 0 };
+  try { return { ...def, ...(JSON.parse(localStorage.getItem('ns-perks') ?? '{}') as Partial<Perks>) }; }
+  catch { return def; }
+})();
 function savePerks() { localStorage.setItem('ns-perks', JSON.stringify(perks)); }
 const PERK_DEFS: { key: keyof Perks; name: string; desc: string; max: number }[] = [
   { key: 'armor',  name: '强化装甲', desc: '初始护盾上限 +8/级',   max: 5 },
   { key: 'pay',    name: '军饷',     desc: '初始金币 +30/级',      max: 5 },
   { key: 'fire',   name: '火力校准', desc: '初始武器伤害 +5%/级',  max: 5 },
   { key: 'tactic', name: '战术装填', desc: '手雷冷却 -8%/级',      max: 5 },
+  { key: 'magnet', name: '磁力核心', desc: '金币磁吸半径 +0.5/级', max: 4 },
+  { key: 'dash',   name: '战术冲刺', desc: '冲刺冷却 -4%/级',      max: 4 },
+  { key: 'xp',     name: '战地学习', desc: '经验获取 +6%/级',      max: 5 },
 ];
 const perkCost = (lv: number) => (lv + 1) * 200;
 
+// ---------- 养成中枢（仓库·金币线 + 军械库·经验线，合并入口） ----------
+function progTabsHtml(active: 'vault' | 'armory') {
+  return `<div class="prog-tabs">
+    <button class="loadout-chip${active === 'vault' ? ' on' : ''}" data-ptab="vault">🎒 仓库·军备 <b>${vault.coins}</b>◆</button>
+    <button class="loadout-chip${active === 'armory' ? ' on' : ''}" data-ptab="armory">🛒 军械库·经验 <b>${xp}</b> XP</button>
+  </div>`;
+}
+function wireProgTabs() {
+  $('achv-body').querySelectorAll<HTMLElement>('[data-ptab]').forEach((el) =>
+    el.addEventListener('click', () => renderProgression(el.dataset.ptab as 'vault' | 'armory')));
+}
+function renderProgression(tab: 'vault' | 'armory') {
+  sfx.init();
+  if (tab === 'armory') renderArmory(); else renderVault();
+}
+
 function renderArmory() {
-  $('achv-title').textContent = '军械库 · 永久强化';
+  $('achv-title').textContent = '养成中枢 · 军械库（经验线）';
   const body = $('achv-body');
-  body.innerHTML = `<div class="armory-xp">可用经验 <b>${xp}</b> XP · 军衔 Lv.${getRank()} · 购买永久生效</div>` +
+  body.innerHTML = progTabsHtml('armory') + `<div class="armory-xp">可用经验 <b>${xp}</b> XP · 军衔 Lv.${getRank()} · 购买永久生效</div>` +
     PERK_DEFS.map((p) => {
       const lv = perks[p.key];
       const maxed = lv >= p.max;
@@ -1689,9 +1720,10 @@ function renderArmory() {
       renderArmory();
     });
   });
+  wireProgTabs();
   $('achv').classList.remove('hidden');
 }
-$('btn-armory').addEventListener('click', renderArmory);
+$('btn-prog').addEventListener('click', () => { sfx.init(); renderProgression('vault'); });
 $('btn-daily').addEventListener('click', () => { sfx.init(); startDailyRun(); });
 
 // ---------- 永久仓库（跨局金币 / 武器解锁 / 词缀锻造 / 出战装配 / 元升级 / 武器精通） ----------
@@ -1800,13 +1832,12 @@ function renderSettings() {
   $('achv').classList.remove('hidden');
 }
 $('btn-settings').addEventListener('click', () => { sfx.init(); sfx.setVolume(settings.vol); sfx.startMusic(); renderSettings(); });
-$('btn-vault').addEventListener('click', () => { sfx.init(); renderVault(); });
 $('btn-challenge').addEventListener('click', () => { sfx.init(); renderChallenge(); });
 
 // ---------- 仓库 / 军备（永久经济：解锁武器 · 词缀锻造 · 出战装配） ----------
 function renderVault() {
   const body = $('achv-body');
-  $('achv-title').textContent = '仓库 · 军备';
+  $('achv-title').textContent = '养成中枢 · 仓库（金币线）';
   const avail = ['rifle', ...vault.weapons] as WeaponId[];
 
   // ① 武器解锁
@@ -1863,7 +1894,7 @@ function renderVault() {
     </div>`;
   }).join('');
 
-  body.innerHTML = `
+  body.innerHTML = progTabsHtml('vault') + `
     <div class="vault-head">仓库金币 <b>${vault.coins}</b>◆ · 本局待入库 <b>${runEarned}</b>◆</div>
     <div class="vault-sec">① 武器解锁（永久）</div>
     <div class="vault-list">${unlockRows}</div>
@@ -1915,6 +1946,7 @@ function renderVault() {
       }
     });
   });
+  wireProgTabs();
   $('achv').classList.remove('hidden');
 }
 
@@ -2331,11 +2363,16 @@ function resetLocalRun() {
   stats.maxHp += perks.armor * 8;
   stats.dmgMul += perks.fire * 0.05;
   GRENADE.cdMax = Math.max(4, 8 * (1 - 0.08 * perks.tactic));
+  coinMagnet += perks.magnet * 0.5;
+  dashCdMax = Math.max(1.8, dashCdMax - perks.dash * 0.12);
   // 仓库元升级（永久被动，必须在 resetStats 之后、hp 赋值之前应用）
   coins += metaLv('pay') * 40;
   metaLoot = metaLv('wealth') * 2;
   stats.maxHp += metaLv('shield') * 10;
   stats.dmgMul += metaLv('dmg') * 0.04;
+  // 军衔特权延伸
+  if (rank >= 8) stats.maxHp += 15;
+  if (rank >= 10) autoUpgrade(); // 开局自带 1 个随机强化
   for (const c of coinsE) scene.remove(c.mesh);
   coinsE = [];
   rollContracts();
