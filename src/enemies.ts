@@ -11,9 +11,11 @@ function kindCanvas(kind: EnemyKind): HTMLCanvasElement {
   const hit = texCache.get(kind);
   if (hit) return hit.image as HTMLCanvasElement;
   const cv = document.createElement('canvas');
-  cv.width = 256;
-  cv.height = 256;
+  cv.width = 512;
+  cv.height = 512;
   const ctx = cv.getContext('2d')!;
+  // 逻辑坐标仍按 256 绘制，放大 2 倍输出高清纹理
+  ctx.scale(2, 2);
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, 256, 256);
   const line = (w: number) => { ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = w; };
@@ -156,7 +158,39 @@ function kindCanvas(kind: EnemyKind): HTMLCanvasElement {
       break;
     }
   }
+  // 战损风化层：随机划痕 + 亮色擦亮 + 污渍（自动流入法线/粗糙度派生）
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 26; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256;
+    const a = Math.random() * Math.PI * 2;
+    const len = 8 + Math.random() * 30;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 8; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256;
+    const a = Math.random() * Math.PI * 2;
+    const len = 6 + Math.random() * 18;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  for (let i = 0; i < 10; i++) {
+    ctx.beginPath();
+    ctx.ellipse(Math.random() * 256, Math.random() * 256, 6 + Math.random() * 20, 4 + Math.random() * 12, Math.random() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
   const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
   texCache.set(kind, tex);
   return cv;
 }
@@ -171,7 +205,7 @@ function kindTexture(kind: EnemyKind): THREE.CanvasTexture {
 function makeNormalMap(kind: EnemyKind): THREE.CanvasTexture {
   const hit = normalCache.get(kind);
   if (hit) return hit;
-  const s = 256;
+  const s = 512;
   const src = kindCanvas(kind);
   const img = src.getContext('2d')!.getImageData(0, 0, s, s).data;
   const cv = document.createElement('canvas');
@@ -196,6 +230,7 @@ function makeNormalMap(kind: EnemyKind): THREE.CanvasTexture {
   }
   ctx.putImageData(out, 0, 0);
   const tex = new THREE.CanvasTexture(cv);
+  tex.anisotropy = 8;
   normalCache.set(kind, tex);
   return tex;
 }
@@ -204,7 +239,7 @@ function makeNormalMap(kind: EnemyKind): THREE.CanvasTexture {
 function makeRoughnessMap(kind: EnemyKind): THREE.CanvasTexture {
   const hit = roughCache.get(kind);
   if (hit) return hit;
-  const s = 256;
+  const s = 512;
   const img = kindCanvas(kind).getContext('2d')!.getImageData(0, 0, s, s).data;
   const cv = document.createElement('canvas');
   cv.width = s; cv.height = s;
@@ -217,6 +252,7 @@ function makeRoughnessMap(kind: EnemyKind): THREE.CanvasTexture {
   }
   ctx.putImageData(out, 0, 0);
   const tex = new THREE.CanvasTexture(cv);
+  tex.anisotropy = 8;
   roughCache.set(kind, tex);
   return tex;
 }
@@ -228,8 +264,9 @@ function makeEmissiveMap(kind: EnemyKind): THREE.CanvasTexture {
   const cfg = KIND_CFG[kind];
   const col = '#' + new THREE.Color(cfg.color).lerp(new THREE.Color(0xffffff), 0.3).getHexString();
   const cv = document.createElement('canvas');
-  cv.width = 256; cv.height = 256;
+  cv.width = 512; cv.height = 512;
   const ctx = cv.getContext('2d')!;
+  ctx.scale(2, 2);
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, 256, 256);
   ctx.strokeStyle = col;
@@ -281,6 +318,7 @@ function makeEmissiveMap(kind: EnemyKind): THREE.CanvasTexture {
       break;
   }
   const tex = new THREE.CanvasTexture(cv);
+  tex.anisotropy = 8;
   emissiveCache.set(kind, tex);
   return tex;
 }
@@ -351,11 +389,13 @@ export class Enemy {
     this.maxHp = cfg.hp;
     // 亮色金属实体：受场景光照产生体积明暗，微自发光保证暗图可见
     const tint = new THREE.Color(cfg.color);
-    const bodyMat = () => new THREE.MeshStandardMaterial({
+    const bodyMat = () => new THREE.MeshPhysicalMaterial({
       color: tint, map: kindTexture(kind),
-      normalMap: makeNormalMap(kind), normalScale: new THREE.Vector2(0.9, 0.9),
+      normalMap: makeNormalMap(kind), normalScale: new THREE.Vector2(1.1, 1.1),
       roughnessMap: makeRoughnessMap(kind), roughness: 1.0, metalness: 0.55,
       emissive: 0xffffff, emissiveMap: makeEmissiveMap(kind), emissiveIntensity: 0.75,
+      // 清漆涂层：烤漆机甲质感（漆面高光 + 底层金属反射）
+      clearcoat: 0.55, clearcoatRoughness: 0.3, envMapIntensity: 1.4,
     });
     const edgeMat = () => new THREE.LineBasicMaterial({ color: 0x04070c, transparent: true, opacity: 0.85 });
     const coreMat = (s: number) => new THREE.MeshStandardMaterial({ color: cfg.color, emissive: cfg.color, emissiveIntensity: 1.5, roughness: 0.3 });
