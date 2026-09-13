@@ -633,8 +633,7 @@ kbd {
 
 #btn-retry { pointer-events: auto; }
 .go-actions { margin-top: 30px; display: flex; gap: 16px; align-items: center; justify-content: center; }
-#gameover #btn-retry { margin-top: 0; }
-#pause .btn-ghost { margin-top: 26px; }
+#pause .btn-ghost { margin-top: 0; }
 #pause .btn-ghost.hidden { display: none; }
 #respawn { background: rgba(2, 4, 10, 0.6); }
 #respawn .overlay-title { font-size: 40px; }
@@ -695,7 +694,6 @@ kbd {
   -webkit-mask: radial-gradient(circle, transparent 62%, #000 64%);
 }
 #reload-ring.hidden { display: none; }
-#upgrades .overlay-title { font-size: 32px; letter-spacing: 6px; }
 #shop-wrap {
   margin-top: 24px;
   display: flex; gap: 34px;
@@ -743,7 +741,7 @@ kbd {
   margin-bottom: 4px;
 }
 .armory-xp b { color: var(--amber); font-size: 20px; text-shadow: 0 0 10px rgba(255, 179, 0, 0.5); }
-.armory-row { width: 420px; }
+.armory-row { width: min(460px, 100%); }
 
 /* 主菜单分区标签 */
 .menu-section-label {
@@ -824,7 +822,7 @@ kbd {
   background: var(--panel);
   border: 1px solid rgba(0, 240, 255, 0.15);
   padding: 14px 20px;
-  width: 420px;
+  width: min(460px, 100%);
 }
 .setting-row span { font-size: 15px; letter-spacing: 2px; color: #cfe9ef; min-width: 100px; }
 .setting-row input[type="range"] { flex: 1; accent-color: var(--cyan); }
@@ -1019,3 +1017,33 @@ kbd {
   letter-spacing: 3px;
   text-shadow: 0 0 8px rgba(255, 179, 0, 0.5);
 }
+
+/* ---------- 全面 UI 审查修复 ---------- */
+/* 弹窗 flex 行内 ghost 按钮：默认 30px 顶边距造成错位，容器内归零并对齐高度 */
+.go-actions .btn-ghost,
+.room-actions .btn-ghost,
+.shop-col .btn-ghost {
+  margin-top: 0;
+  padding: 12px 30px;
+}
+#gameover, #lobby, #room { cursor: default; }
+/* 结算 5 项统计：3 列居中（3+2 布局） */
+.go-stats { grid-template-columns: repeat(3, 210px); justify-content: center; }
+/* 战绩 10 格：5 列两行整排 */
+.stat-grid { grid-template-columns: repeat(5, 1fr); }
+/* 面板内容行宽统一 460，区块标题/提示不再贴左错位 */
+#achv-body .shop-item { width: min(460px, 100%); }
+.vault-head, .vault-sec, .vault-loadout, .prog-tabs,
+#achv-body .hint {
+  width: min(460px, 100%);
+  margin-inline: auto;
+}
+.vault-sec { text-align: left; }
+/* 面板滚动条细化 */
+#achv-body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 240, 255, 0.3) transparent;
+  padding-right: 4px;
+}
+/* 联机大厅按钮统一尺寸 */
+.lobby-row .btn-neon { padding: 12px 34px; }
