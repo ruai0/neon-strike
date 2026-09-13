@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Sfx } from './audio';
 import { Particles } from './particles';
 import { Enemy, KIND_CFG, EnemyKind, EnemyAffix, ENEMY_AFFIX } from './enemies';
@@ -78,6 +79,12 @@ const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.7, 0.5, 0.75));
 composer.addPass(new OutputPass());
+
+// 程序化环境反射：让金属材质有真实反射内容（零素材）
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.5;
+pmrem.dispose();
 
 // ---------- 灯光 ----------
 const hemiLight = new THREE.HemisphereLight(0x3a5a80, 0x18202c, 1.0);
@@ -2259,6 +2266,7 @@ document.addEventListener('pointerlockchange', () => {
     aiming = false;
     $('pause-hint').textContent = mode !== 'solo' ? '联机中，战斗仍在继续！点击画面继续' : '点击画面继续';
     $('btn-pause-leave').classList.toggle('hidden', mode === 'solo');
+    $('btn-pause-menu').classList.toggle('hidden', mode !== 'solo');
     elPause.classList.remove('hidden');
   }
 });
@@ -2368,6 +2376,23 @@ $('btn-retry').addEventListener('click', () => {
     startGame('solo');
   }
 });
+
+// 返回主菜单（结算/暂停均可）
+function backToMenu() {
+  clearWorld();
+  resetLocalRun();
+  document.exitPointerLock();
+  state = 'menu';
+  elHud.classList.add('hidden');
+  elOver.classList.add('hidden');
+  elPause.classList.add('hidden');
+  elRespawn.classList.add('hidden');
+  $('upgrades').classList.add('hidden');
+  elMenu.classList.remove('hidden');
+  refreshMenuMeta();
+}
+$('btn-go-menu').addEventListener('click', () => { sfx.init(); backToMenu(); });
+$('btn-pause-menu').addEventListener('click', (e) => { e.stopPropagation(); sfx.init(); backToMenu(); });
 
 // 回到大厅（联机局内 / 结算界面）
 function leaveToLobby() {
@@ -2621,6 +2646,7 @@ function gameOver(board?: { name: string; score: number; kills: number }[], titl
   $('go-vault').textContent = `+${banked}◆`;
   $('btn-retry').textContent = mode === 'pvp' ? '再来一局' : '重新部署';
   $('btn-go-leave').classList.toggle('hidden', mode === 'solo');
+  $('btn-go-menu').classList.toggle('hidden', mode !== 'solo');
   const elBoard = $('go-board');
   if (board && board.length > 0) {
     elBoard.classList.remove('hidden');

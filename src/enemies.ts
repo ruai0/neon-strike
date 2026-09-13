@@ -226,8 +226,8 @@ export class Enemy {
     const tint = new THREE.Color(cfg.color);
     const bodyMat = () => new THREE.MeshStandardMaterial({
       color: tint, map: kindTexture(kind),
-      roughness: 0.5, metalness: 0.2,
-      emissive: cfg.color, emissiveIntensity: 0.28,
+      roughness: 0.32, metalness: 0.5,
+      emissive: cfg.color, emissiveIntensity: 0.35,
     });
     const edgeMat = () => new THREE.LineBasicMaterial({ color: 0x04070c, transparent: true, opacity: 0.85 });
     const coreMat = (s: number) => new THREE.MeshStandardMaterial({ color: cfg.color, emissive: cfg.color, emissiveIntensity: 1.5, roughness: 0.3 });
