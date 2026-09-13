@@ -759,6 +759,13 @@ kbd {
   padding: 4px 10px;
 }
 .mast-chip.on { color: var(--amber); border-color: rgba(255, 179, 0, 0.3); }
+.va-slots { display: flex; gap: 6px; align-items: center; }
+.slot-tag {
+  font-size: 11px; letter-spacing: 1px; font-family: var(--font-display);
+  color: rgba(207, 233, 239, 0.45); border: 1px solid rgba(0, 240, 255, 0.15); padding: 2px 8px;
+}
+.slot-tag.on { color: var(--amber); border-color: rgba(255, 179, 0, 0.4); }
+.va-cost { margin-left: 10px; color: rgba(207, 233, 239, 0.35); letter-spacing: 1px; }
 
 /* 设置面板 */
 .setting-row {

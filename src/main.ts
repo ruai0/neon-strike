@@ -764,7 +764,7 @@ function updateRacks(dt: number) {
       const d = Math.hypot(camera.position.x - r.pos.x, camera.position.z - r.pos.z);
       if (d < 1.6) {
         particles.burst(new THREE.Vector3(r.pos.x, 1, r.pos.z), new THREE.Color(WEAPONS[r.weapon].color), 20, 5);
-        weaponAffix[r.weapon] = r.affix;
+        if (r.affix && !weaponAffix[r.weapon].includes(r.affix) && weaponAffix[r.weapon].length < 3) weaponAffix[r.weapon].push(r.affix);
         pickupWeapon(r.weapon);
         scene.remove(r.mesh);
         disposeObj(r.mesh);
@@ -886,20 +886,21 @@ const AFFIX_INFO: Record<Affix, { name: string; desc: string }> = {
   expanded: { name: '扩容的', desc: '弹匣 +30%' },
   deadly:   { name: '致命的', desc: '暴击率 +10%' },
 };
-const weaponAffix: Record<WeaponId, Affix | null> = {
-  rifle: null, smg: null, shotgun: null, railgun: null, launcher: null,
-  plasma: null, arc: null, homing: null, flame: null,
+const weaponAffix: Record<WeaponId, Affix[]> = {
+  rifle: [], smg: [], shotgun: [], railgun: [], launcher: [],
+  plasma: [], arc: [], homing: [], flame: [],
 };
+function hasAffix(w: WeaponId, a: Affix): boolean { return weaponAffix[w].includes(a); }
 function rollAffix(): Affix | null {
   const keys = Object.keys(AFFIX_INFO) as Affix[];
   return Math.random() < 0.65 ? keys[Math.floor(Math.random() * keys.length)] : null;
 }
 function critRoll() {
-  const bonus = weaponAffix[weapon] === 'deadly' ? 0.1 + 0.05 * (affixLv(weapon) - 1) : 0;
+  const bonus = hasAffix(weapon, 'deadly') ? 0.1 + 0.05 * (affixLvOf(weapon, 'deadly') - 1) : 0;
   return Math.random() < stats.critChance + bonus;
 }
 
-const magOf = (w: WeaponId) => Math.round(WEAPONS[w].mag * stats.magMul * (weaponAffix[w] === 'expanded' ? 1 + 0.3 * affixLv(w) : 1));
+const magOf = (w: WeaponId) => Math.round(WEAPONS[w].mag * stats.magMul * (hasAffix(w, 'expanded') ? 1 + 0.3 * affixLvOf(w, 'expanded') : 1));
 
 interface CardEntry { u: Upgrade; mult: number; cls: string; rname: string; cursed: boolean; }
 let currentPicks: CardEntry[] = [];
@@ -965,9 +966,10 @@ function renderShop() {
     for (const w of ALL_WEAPONS) {
       if (w === 'rifle') continue;
       const cfg = WEAPONS[w];
-      const aff = weaponAffix[w] ? AFFIX_INFO[weaponAffix[w]!].name + '·' : '';
+      const affs = weaponAffix[w];
+      const aff = affs.length ? affs.map((a) => AFFIX_INFO[a].name).join('·') + '·' : '';
       if (!owned.includes(w)) {
-        items.push({ label: `购买 ${aff}${cfg.name}`, sub: aff ? AFFIX_INFO[weaponAffix[w]!].desc : '新武器入列', price: WEAPON_PRICES[w], onBuy: () => grantShopWeapon(w) });
+        items.push({ label: `购买 ${aff}${cfg.name}`, sub: affs.length ? affs.map((a) => AFFIX_INFO[a].desc).join('；') : '新武器入列', price: WEAPON_PRICES[w], onBuy: () => grantShopWeapon(w) });
       } else if (weaponLv[w] < 3) {
       items.push({ label: `${cfg.name} → ${'I'.repeat(weaponLv[w] + 1)}`, sub: '熟练度 +15% 伤害', price: 130, onBuy: () => { weaponLv[w]++; ammoPool[w] = magOf(w); if (weapon === w) { ammo = ammoPool[w]; updateAmmoUI(); } updateAmmoUI(); } });
     } else {
@@ -1557,15 +1559,30 @@ interface VaultAffix { a: Affix; lv: number; }
 interface Vault {
   coins: number;
   weapons: WeaponId[];
-  affix: Record<string, VaultAffix | null>;
-  loadout: WeaponId | null;
-  mastery: Partial<Record<WeaponId, number>>; // 永久武器精通（0-3）
-  meta: Record<string, number>;               // 元升级等级（按 key）
+  affix: Record<string, VaultAffix[]>;         // 每把武器最多 3 条锻造词缀（按槽顺序填充）
+  loadout: WeaponId[];                          // 出战装配（最多两把，第一把为主武器）
+  mastery: Partial<Record<WeaponId, number>>;   // 永久武器精通（0-3）
+  meta: Record<string, number>;                 // 元升级等级（按 key）
 }
 let vault: Vault = (() => {
-  const def: Vault = { coins: 0, weapons: [], affix: {}, loadout: null, mastery: {}, meta: {} };
-  try { return { ...def, ...(JSON.parse(localStorage.getItem('ns-vault') ?? '{}') as Partial<Vault>) }; }
-  catch { return def; }
+  const def: Vault = { coins: 0, weapons: [], affix: {}, loadout: [], mastery: {}, meta: {} };
+  try {
+    const raw = JSON.parse(localStorage.getItem('ns-vault') ?? '{}') as Partial<Vault> & {
+      loadout?: WeaponId | WeaponId[] | null;
+      affix?: Record<string, VaultAffix | VaultAffix[] | null>;
+    };
+    const v = { ...def, ...raw } as Vault;
+    // 旧档迁移：单词缀 → 词缀数组；单装配 → 数组
+    const affix: Record<string, VaultAffix[]> = {};
+    for (const [k, val] of Object.entries(v.affix ?? {})) {
+      if (Array.isArray(val)) affix[k] = val;
+      else if (val && typeof val === 'object' && 'a' in val) affix[k] = [val as VaultAffix];
+      else affix[k] = [];
+    }
+    v.affix = affix;
+    v.loadout = Array.isArray(v.loadout) ? v.loadout : (v.loadout ? [v.loadout as WeaponId] : []);
+    return v;
+  } catch { return def; }
 })();
 function saveVault() { localStorage.setItem('ns-vault', JSON.stringify(vault)); }
 let runEarned = 0; // 本局累计获得（结算时存入仓库）
@@ -1602,10 +1619,10 @@ function gainCoins(base: number, lootMul = 1) {
   return amt;
 }
 
-// 词缀强度等级：局内捡到临时词缀=1级；与仓库锻造的词缀同类型时，享受锻造等级
-function affixLv(w: WeaponId): number {
-  const pa = vault.affix[w];
-  return pa && weaponAffix[w] === pa.a ? pa.lv : 1;
+// 词缀强度：局内捡到的临时词缀=1级；仓库同类型锻造词缀提供更高等级
+function affixLvOf(w: WeaponId, a: Affix): number {
+  const pa = (vault.affix[w] ?? []).find((x) => x.a === a);
+  return pa ? pa.lv : 1;
 }
 
 // ---------- 设置（灵敏度 / 音量，持久化） ----------
@@ -1651,7 +1668,6 @@ function renderVault() {
   const body = $('achv-body');
   $('achv-title').textContent = '仓库 · 军备';
   const avail = ['rifle', ...vault.weapons] as WeaponId[];
-  const forgeCost = Math.max(30, Math.round(150 * forgeLevel * (1 - 0.1 * metaLv('forge'))));
 
   // ① 武器解锁
   const unlockRows = ALL_WEAPONS.filter((w) => w !== 'rifle').map((w) => {
@@ -1664,24 +1680,29 @@ function renderVault() {
     </div>`;
   }).join('');
 
-  // ② 词缀锻造
+  // ② 词缀锻造（每枪 3 槽，按序填充；费用 = 150 × 等级 × 槽位倍率）
   const affixRows = avail.map((w) => {
-    const pa = vault.affix[w];
-    const cur = pa ? `${AFFIX_INFO[pa.a].name} Lv.${pa.lv}` : '无';
+    const slots = vault.affix[w] ?? [];
+    const slotTags = [0, 1, 2].map((i) => {
+      const pa = slots[i];
+      const open = i === 0 || slots.length >= i;
+      const label = pa ? `${AFFIX_INFO[pa.a].name.replace('的', '')} Lv.${pa.lv}` : open ? '空' : '未开放';
+      return `<span class="slot-tag${pa ? ' on' : ''}">槽${i + 1} ${label}</span>`;
+    }).join('');
     const chips = (Object.keys(AFFIX_INFO) as Affix[]).map((a) =>
-      `<button class="affix-chip${pa?.a === a ? ' on' : ''}" data-act="forge" data-w="${w}" data-a="${a}">${AFFIX_INFO[a].name.replace('的', '')}</button>`,
+      `<button class="affix-chip${slots.some((x) => x.a === a) ? ' on' : ''}" data-act="forge" data-w="${w}" data-a="${a}">${AFFIX_INFO[a].name.replace('的', '')}</button>`,
     ).join('');
     const lvSel = [1, 2, 3].map((l) => `<button class="lv-chip${forgeLevel === l ? ' on' : ''}" data-act="lv" data-l="${l}">Lv.${l}</button>`).join('');
     return `<div class="vault-affix">
-      <div class="va-head"><span class="si-name">${WEAPONS[w].name}</span><span class="si-sub">当前 ${cur}</span></div>
+      <div class="va-head"><span class="si-name">${WEAPONS[w].name}</span><span class="va-slots">${slotTags}</span></div>
       <div class="va-chips">${chips}</div>
-      <div class="va-lv">锻造等级 ${lvSel}</div>
+      <div class="va-lv">锻造等级 ${lvSel}<span class="va-cost">费用 150◆×等级×槽位（槽1×1 槽2×2 槽3×3，受锻造大师折扣）</span></div>
     </div>`;
   }).join('');
 
-  // ③ 出战装配
+  // ③ 出战装配（最多两把，第一把为主武器 ★）
   const loadout = avail.map((w) =>
-    `<button class="loadout-chip${vault.loadout === w ? ' on' : ''}" data-act="equip" data-w="${w}">${WEAPONS[w].name}</button>`,
+    `<button class="loadout-chip${vault.loadout.includes(w) ? ' on' : ''}" data-act="equip" data-w="${w}">${WEAPONS[w].name}${vault.loadout[0] === w ? ' ★' : ''}</button>`,
   ).join('');
 
   // ④ 永久武器精通（结算沉淀，下局开局携带）
@@ -1706,9 +1727,9 @@ function renderVault() {
     <div class="vault-head">仓库金币 <b>${vault.coins}</b>◆ · 本局待入库 <b>${runEarned}</b>◆</div>
     <div class="vault-sec">① 武器解锁（永久）</div>
     <div class="vault-list">${unlockRows}</div>
-    <div class="vault-sec">② 词缀锻造（先选等级，再点词缀 · 当前 Lv.${forgeLevel} 花费 ${forgeCost}◆）</div>
+    <div class="vault-sec">② 词缀锻造（每枪 3 槽按序填充 · 先选等级，再点词缀锻入下一个空槽）</div>
     <div class="vault-list">${affixRows}</div>
-    <div class="vault-sec">③ 出战装配（开局携带）</div>
+    <div class="vault-sec">③ 出战装配（最多两把 · ★ 为主武器，点击选中/取消）</div>
     <div class="vault-loadout">${loadout}</div>
     <div class="vault-sec">④ 永久武器精通（局内练级，结算自动沉淀）</div>
     <div class="vault-loadout">${mastDisplay}</div>
@@ -1726,12 +1747,22 @@ function renderVault() {
       }
       if (act === 'forge') {
         const w = el.dataset.w as WeaponId; const a = el.dataset.a as Affix;
-        if (vault.coins < forgeCost) { sfx.empty(); return; }
-        vault.coins -= forgeCost; vault.affix[w] = { a, lv: forgeLevel }; saveVault(); sfx.pickup(); refreshMenuMeta(); renderVault(); return;
+        const slots = vault.affix[w] ?? [];
+        const existIdx = slots.findIndex((x) => x.a === a);
+        const idx = existIdx >= 0 ? existIdx : slots.length; // 已有该词缀=重锻该槽；否则锻入下一个空槽
+        if (idx >= 3) { toast('该武器词缀槽已满（3/3）'); sfx.empty(); return; }
+        const cost = Math.max(30, Math.round(150 * forgeLevel * (idx + 1) * (1 - 0.1 * metaLv('forge'))));
+        if (vault.coins < cost) { sfx.empty(); return; }
+        vault.coins -= cost;
+        slots[idx] = { a, lv: forgeLevel };
+        vault.affix[w] = slots;
+        saveVault(); sfx.pickup(); refreshMenuMeta(); renderVault(); return;
       }
       if (act === 'equip') {
         const w = el.dataset.w as WeaponId;
-        vault.loadout = vault.loadout === w ? null : w; saveVault(); sfx.pickup(); renderVault(); return;
+        const rest = vault.loadout.filter((x) => x !== w);
+        vault.loadout = vault.loadout.includes(w) ? rest : (rest.length >= 2 ? [...rest.slice(1), w] : [...rest, w]);
+        saveVault(); sfx.pickup(); renderVault(); return;
       }
       if (act === 'meta') {
         const k = el.dataset.k!;
@@ -1841,7 +1872,8 @@ function updateAmmoUI() {
   elAmmo.innerHTML = `${ammo}<span>/${max}</span>`;
   elAmmo.classList.toggle('empty', ammo === 0);
   elReload.classList.toggle('hidden', ammo > 0 || reloading > 0);
-  elWeaponName.textContent = (weaponAffix[weapon] ? AFFIX_INFO[weaponAffix[weapon]!].name + '·' : '') + cfg.name + (weaponLv[weapon] > 0 ? ' ' + 'I'.repeat(weaponLv[weapon]) : '');
+  const affName = weaponAffix[weapon].map((a) => AFFIX_INFO[a].name.replace('的', '')).join('·');
+  elWeaponName.textContent = (affName ? affName + '·' : '') + cfg.name + (weaponLv[weapon] > 0 ? ' ' + 'I'.repeat(weaponLv[weapon]) : '');
 }
 function updateHealthUI() {
   const ratio = Math.max(0, hp / stats.maxHp);
@@ -2174,20 +2206,22 @@ function resetLocalRun() {
   for (const w of ALL_WEAPONS) {
     ammoPool[w] = w === 'rifle' ? WEAPONS.rifle.mag : (w === 'smg' && rank >= 6 ? WEAPONS.smg.mag : 0);
     weaponLv[w] = 0;
-    weaponAffix[w] = null;
+    weaponAffix[w] = [];
   }
   // 永久武器精通：开局即携带仓库中沉淀的武器等级
   for (const w of ALL_WEAPONS) weaponLv[w] = Math.min(3, vault.mastery[w] ?? 0);
   ammo = ammoPool.rifle;
-  // 出战装配：仓库已解锁并选定的武器，开局直接携带（含锻造词缀）
-  if (vault.loadout && vault.weapons.includes(vault.loadout)) {
-    const w = vault.loadout;
+  // 出战装配：仓库已解锁并选定的武器（最多两把），开局直接携带（含全部锻造词缀）
+  const carried = vault.loadout.filter((w) => vault.weapons.includes(w));
+  for (const w of carried) {
     if (!owned.includes(w)) owned.push(w);
-    weaponAffix[w] = vault.affix[w] ? vault.affix[w]!.a : null;
+    weaponAffix[w] = (vault.affix[w] ?? []).map((x) => x.a);
     ammoPool[w] = magOf(w);
-    weapon = w;
-    ammo = ammoPool[w];
-    showWeaponModel(w);
+  }
+  if (carried.length) {
+    weapon = carried[0];
+    ammo = ammoPool[weapon];
+    showWeaponModel(weapon);
   }
   reloading = 0;
   firing = false; aiming = false; myDead = false; respawnTimer = 0;
@@ -2429,7 +2463,7 @@ function dropSupplyCore() {
 }
 
 function startReload() {
-  reloadTotal = WEAPONS[weapon].reload * stats.reloadMul * (weaponAffix[weapon] === 'swift' ? 0.75 : 1);
+  reloadTotal = WEAPONS[weapon].reload * stats.reloadMul * (hasAffix(weapon, 'swift') ? 0.75 : 1);
   reloading = reloadTotal;
   if (weapon === 'shotgun') sfx.pump(); else sfx.reload();
 }
@@ -2452,7 +2486,7 @@ function switchWeapon(w: WeaponId) {
 
 function pickupWeapon(w: WeaponId) {
   ammoPool[weapon] = ammo;
-  const aff = weaponAffix[w] ? AFFIX_INFO[weaponAffix[w]!].name : '';
+  const aff = weaponAffix[w].map((a) => AFFIX_INFO[a].name.replace('的', '')).join('·');
   if (!owned.includes(w)) {
     owned.push(w);
     ammoPool[w] = magOf(w);
@@ -2524,7 +2558,7 @@ function killEnemy(en: Enemy, silentCombo = false) {
     hp = Math.min(hp + stats.lifesteal, stats.maxHp);
     updateHealthUI();
   }
-  if (weaponAffix[weapon] === 'vamp' && hp < stats.maxHp) {
+  if (hasAffix(weapon, 'vamp') && hp < stats.maxHp) {
     hp = Math.min(hp + 2, stats.maxHp);
     updateHealthUI();
   }
@@ -2642,7 +2676,7 @@ function fire() {
         const dmg = Math.round(cfg.dmg * dmgOf() * (isCrit ? 2 : 1));
         if (isHead) trackContract('headshot');
         // 词缀：炽热的 → 点燃
-        if ((weaponAffix[weapon] === 'inferno' || cfg.flame) && mode === 'solo') hitEnemy.burnT = Math.max(hitEnemy.burnT, cfg.flame ? 2 : 1.2);
+        if ((hasAffix(weapon, 'inferno') || cfg.flame) && mode === 'solo') hitEnemy.burnT = Math.max(hitEnemy.burnT, cfg.flame ? 2 : 1.2);
         spawnFloater(h.point, `${dmg}${isCrit ? '!' : ''}`, isCrit ? 'crit' : 'dmg');
         particles.burst(h.point, new THREE.Color(isCrit ? AMBER : cfg.flame ? 0xff7a2a : 0xffffff), isCrit ? 10 : 5, 3);
         flashHit(false);
