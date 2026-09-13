@@ -4,9 +4,12 @@ export type EnemyKind = 'swarm' | 'drone' | 'sentry' | 'tank' | 'boss' | 'elite'
 
 // 每种敌机的专属贴图（白底暗纹，叠加到体色上）
 const texCache = new Map<string, THREE.CanvasTexture>();
-function kindTexture(kind: EnemyKind): THREE.CanvasTexture {
+const normalCache = new Map<string, THREE.CanvasTexture>();
+const roughCache = new Map<string, THREE.CanvasTexture>();
+const emissiveCache = new Map<string, THREE.CanvasTexture>();
+function kindCanvas(kind: EnemyKind): HTMLCanvasElement {
   const hit = texCache.get(kind);
-  if (hit) return hit;
+  if (hit) return hit.image as HTMLCanvasElement;
   const cv = document.createElement('canvas');
   cv.width = 256;
   cv.height = 256;
@@ -155,6 +158,130 @@ function kindTexture(kind: EnemyKind): THREE.CanvasTexture {
   }
   const tex = new THREE.CanvasTexture(cv);
   texCache.set(kind, tex);
+  return cv;
+}
+
+// 颜色贴图（确保 canvas 已生成再返回）
+function kindTexture(kind: EnemyKind): THREE.CanvasTexture {
+  kindCanvas(kind);
+  return texCache.get(kind)!;
+}
+
+// 法线贴图：从高度（亮度）图 Sobel 派生，暗纹=凹槽，面板=凸起
+function makeNormalMap(kind: EnemyKind): THREE.CanvasTexture {
+  const hit = normalCache.get(kind);
+  if (hit) return hit;
+  const s = 256;
+  const src = kindCanvas(kind);
+  const img = src.getContext('2d')!.getImageData(0, 0, s, s).data;
+  const cv = document.createElement('canvas');
+  cv.width = s; cv.height = s;
+  const ctx = cv.getContext('2d')!;
+  const out = ctx.createImageData(s, s);
+  const h = (x: number, y: number) => {
+    const xx = (x + s) % s, yy = (y + s) % s;
+    const i = (yy * s + xx) * 4;
+    return (img[i] + img[i + 1] + img[i + 2]) / 765;
+  };
+  const str = 2.4;
+  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+    const dx = (h(x - 1, y) - h(x + 1, y)) * str;
+    const dy = (h(x, y - 1) - h(x, y + 1)) * str;
+    const len = Math.hypot(dx, dy, 1);
+    const i = (y * s + x) * 4;
+    out.data[i] = ((dx / len) * 0.5 + 0.5) * 255;
+    out.data[i + 1] = ((dy / len) * 0.5 + 0.5) * 255;
+    out.data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
+    out.data[i + 3] = 255;
+  }
+  ctx.putImageData(out, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  normalCache.set(kind, tex);
+  return tex;
+}
+
+// 粗糙度贴图：暗色缝隙磨损发糙，亮面板光洁（three 读取 G 通道）
+function makeRoughnessMap(kind: EnemyKind): THREE.CanvasTexture {
+  const hit = roughCache.get(kind);
+  if (hit) return hit;
+  const s = 256;
+  const img = kindCanvas(kind).getContext('2d')!.getImageData(0, 0, s, s).data;
+  const cv = document.createElement('canvas');
+  cv.width = s; cv.height = s;
+  const ctx = cv.getContext('2d')!;
+  const out = ctx.createImageData(s, s);
+  for (let i = 0; i < s * s; i++) {
+    const lum = (img[i * 4] + img[i * 4 + 1] + img[i * 4 + 2]) / 765;
+    const r = Math.round((1 - lum) * 110 + 80);
+    out.data[i * 4] = r; out.data[i * 4 + 1] = r; out.data[i * 4 + 2] = r; out.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(out, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  roughCache.set(kind, tex);
+  return tex;
+}
+
+// 发光贴图：每种怪的关键纹路自发光（黑底 + 本色亮纹）
+function makeEmissiveMap(kind: EnemyKind): THREE.CanvasTexture {
+  const hit = emissiveCache.get(kind);
+  if (hit) return hit;
+  const cfg = KIND_CFG[kind];
+  const col = '#' + new THREE.Color(cfg.color).lerp(new THREE.Color(0xffffff), 0.3).getHexString();
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 256;
+  const ctx = cv.getContext('2d')!;
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.strokeStyle = col;
+  ctx.fillStyle = col;
+  ctx.shadowColor = col;
+  ctx.shadowBlur = 10;
+  ctx.lineCap = 'round';
+  const S = (fn: () => void) => { fn(); };
+  switch (kind) {
+    case 'swarm':
+      S(() => { for (let y = 0; y < 6; y++) for (let x = 0; x < 6; x++) {
+        ctx.beginPath(); ctx.arc(24 + x * 42 + (y % 2 ? 21 : 0), 24 + y * 42, 7, 0, Math.PI * 2); ctx.fill();
+      } });
+      break;
+    case 'drone':
+      S(() => { ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(128, 128, 34, 0, Math.PI * 2); ctx.stroke(); });
+      break;
+    case 'sentry':
+      S(() => { ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(128, 128, 52, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(128, 128, 22, 0, Math.PI * 2); ctx.fill(); });
+      break;
+    case 'tank':
+      S(() => { ctx.lineWidth = 10; ctx.save(); ctx.globalAlpha = 0.85;
+        for (let i = -8; i < 10; i += 2) { ctx.beginPath(); ctx.moveTo(i * 40, -10); ctx.lineTo(i * 40 + 276, 266); ctx.stroke(); }
+        ctx.restore(); });
+      break;
+    case 'elite':
+      S(() => { ctx.lineWidth = 6; for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        ctx.beginPath(); ctx.moveTo(128, 128); ctx.lineTo(128 + Math.cos(a) * 120, 128 + Math.sin(a) * 120); ctx.stroke();
+      } });
+      break;
+    case 'boss':
+      S(() => { ctx.lineWidth = 9; for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        ctx.save(); ctx.translate(128, 128); ctx.rotate(a);
+        ctx.fillRect(60, -5, 60, 10);
+        ctx.restore();
+      }
+      ctx.beginPath(); ctx.arc(128, 128, 44, 0, Math.PI * 2); ctx.stroke(); });
+      break;
+    case 'medic':
+      S(() => { ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(128, 16); ctx.lineTo(128, 240); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(16, 128); ctx.lineTo(240, 128); ctx.stroke(); });
+      break;
+    case 'bomber':
+      S(() => { ctx.lineWidth = 9; for (const r of [36, 64, 92]) { ctx.beginPath(); ctx.arc(128, 128, r, 0, Math.PI * 2); ctx.stroke(); }
+        ctx.beginPath(); ctx.arc(128, 128, 16, 0, Math.PI * 2); ctx.fill(); });
+      break;
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  emissiveCache.set(kind, tex);
   return tex;
 }
 
@@ -226,8 +353,9 @@ export class Enemy {
     const tint = new THREE.Color(cfg.color);
     const bodyMat = () => new THREE.MeshStandardMaterial({
       color: tint, map: kindTexture(kind),
-      roughness: 0.32, metalness: 0.5,
-      emissive: cfg.color, emissiveIntensity: 0.35,
+      normalMap: makeNormalMap(kind), normalScale: new THREE.Vector2(0.9, 0.9),
+      roughnessMap: makeRoughnessMap(kind), roughness: 1.0, metalness: 0.55,
+      emissive: 0xffffff, emissiveMap: makeEmissiveMap(kind), emissiveIntensity: 0.75,
     });
     const edgeMat = () => new THREE.LineBasicMaterial({ color: 0x04070c, transparent: true, opacity: 0.85 });
     const coreMat = (s: number) => new THREE.MeshStandardMaterial({ color: cfg.color, emissive: cfg.color, emissiveIntensity: 1.5, roughness: 0.3 });
