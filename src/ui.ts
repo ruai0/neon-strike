@@ -106,6 +106,7 @@ export function drawMinimap(
 
   const enemyColor: Record<string, string> = {
     swarm: '#6aff8f', drone: '#00f0ff', sentry: '#ff2bd6', tank: '#ffb300', boss: '#ff3838', elite: '#f0f0f0',
+    medic: '#7dffce', bomber: '#ff6a00',
   };
   for (const e of enemies) dot(e.x, e.z, enemyColor[e.kind] ?? '#fff', e.kind === 'boss' ? 6 : e.kind === 'tank' ? 4 : 2.5);
 

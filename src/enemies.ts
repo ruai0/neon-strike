@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type EnemyKind = 'swarm' | 'drone' | 'sentry' | 'tank' | 'boss' | 'elite';
+export type EnemyKind = 'swarm' | 'drone' | 'sentry' | 'tank' | 'boss' | 'elite' | 'medic' | 'bomber';
 
 // 每种敌机的专属贴图（白底暗纹，叠加到体色上）
 const texCache = new Map<string, THREE.CanvasTexture>();
@@ -64,6 +64,25 @@ function kindTexture(kind: EnemyKind): THREE.CanvasTexture {
         ctx.stroke();
       }
       break;
+    case 'medic':
+      // 维修蜂：十字纹
+      ctx.lineWidth = 12;
+      ctx.beginPath(); ctx.moveTo(64, 6); ctx.lineTo(64, 122); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(6, 64); ctx.lineTo(122, 64); ctx.stroke();
+      ctx.beginPath(); ctx.arc(64, 64, 42, 0, Math.PI * 2); ctx.stroke();
+      break;
+    case 'bomber':
+      // 自爆蜂：警示三角纹
+      ctx.lineWidth = 6;
+      for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) {
+        ctx.beginPath();
+        ctx.moveTo(x * 44 + 20, y * 44 + 12);
+        ctx.lineTo(x * 44 + 4, y * 44 + 36);
+        ctx.lineTo(x * 44 + 36, y * 44 + 36);
+        ctx.closePath();
+        ctx.stroke();
+      }
+      break;
   }
   const tex = new THREE.CanvasTexture(cv);
   texCache.set(kind, tex);
@@ -79,6 +98,8 @@ export const KIND_CFG: Record<EnemyKind, {
   tank:   { hp: 170, r: 1.05, speed: 2.1, score: 200,  color: 0xffb300, label: '重装' },
   elite:  { hp: 260, r: 1.2,  speed: 3.4, score: 500,  color: 0xf0f0f0, label: '精英猎手' },
   boss:   { hp: 750, r: 2.1,  speed: 1.6, score: 1500, color: 0xff3838, label: '核心主宰' },
+  medic:  { hp: 55,  r: 0.6,  speed: 4.2, score: 180,  color: 0x7dffce, label: '维修蜂' },
+  bomber: { hp: 25,  r: 0.55, speed: 5.6, score: 80,   color: 0xff6a00, label: '自爆蜂' },
 };
 
 // 敌机视图：单机由本地模拟驱动，联机由服务器快照插值
@@ -108,6 +129,7 @@ export class Enemy {
   enraged = false;
   phase2 = false;
   burnT = 0; // 火焰点燃（单机）
+  bossVar: 'core' | 'hive' | 'doom' = 'core'; // BOSS 变体
   affix: EnemyAffix | null = null;
   // 坦克冲锋状态
   chargeWind = 0;
@@ -182,6 +204,30 @@ export class Enemy {
         ring2.rotation.set(Math.PI / 1.8, 0.6, 0);
         shell.add(ring1, ring2);
         core = new THREE.Mesh(new THREE.IcosahedronGeometry(cfg.r * 0.42, 0), coreMat(cfg.r * 0.42));
+        break;
+      }
+      case 'medic': {
+        // 维修蜂：十字机匣 + 光环
+        shell = edged(new THREE.BoxGeometry(cfg.r * 1.5, cfg.r * 0.5, cfg.r * 0.5));
+        const bar2 = new THREE.Mesh(new THREE.BoxGeometry(cfg.r * 0.5, cfg.r * 0.5, cfg.r * 1.5), bodyMat());
+        bar2.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(cfg.r * 0.5, cfg.r * 0.5, cfg.r * 1.5)), edgeMat()));
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(cfg.r * 1.05, 0.05, 8, 26), bodyMat());
+        halo.rotation.x = Math.PI / 2;
+        shell.add(bar2, halo);
+        core = new THREE.Mesh(new THREE.OctahedronGeometry(cfg.r * 0.42, 0), coreMat(cfg.r * 0.42));
+        break;
+      }
+      case 'bomber': {
+        // 自爆蜂：球体 + 尖刺
+        shell = new THREE.Mesh(new THREE.SphereGeometry(cfg.r * 0.9, 10, 8), bodyMat());
+        for (let s = 0; s < 6; s++) {
+          const a = (s / 6) * Math.PI * 2;
+          const spike = new THREE.Mesh(new THREE.ConeGeometry(cfg.r * 0.22, cfg.r * 0.6, 5), bodyMat());
+          spike.position.set(Math.cos(a) * cfg.r * 0.9, s % 2 ? 0.3 : -0.3, Math.sin(a) * cfg.r * 0.9);
+          spike.rotation.z = -a + Math.PI / 2;
+          shell.add(spike);
+        }
+        core = new THREE.Mesh(new THREE.SphereGeometry(cfg.r * 0.4, 8, 6), coreMat(cfg.r * 0.4));
         break;
       }
       default: {

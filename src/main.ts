@@ -51,6 +51,8 @@ const CONTACT_DMG: Record<EnemyKind, { dmg: number; cd: number }> = {
   tank: { dmg: 25, cd: 1.2 },
   elite: { dmg: 18, cd: 1.0 },
   boss: { dmg: 20, cd: 1.0 },
+  medic: { dmg: 10, cd: 1.0 },
+  bomber: { dmg: 15, cd: 1.0 },
 };
 
 const sfx = new Sfx();
@@ -1258,6 +1260,13 @@ let firing = false;
 let aiming = false;
 let gunKick = 0;
 let overcharge = 0;
+// EMP 大招（单机）：击杀充能，[V] 释放冻结全场
+let ultCharge = 0;
+let ultFreezeT = 0;
+const empRings: THREE.Mesh[] = [];
+// 熔火工厂灼烧区（与地面熔岩碟同位）
+const LAVA_SPOTS: [number, number][] = [[8, 8], [-8, -8], [8, -8], [-8, 8]];
+let lavaTick = 0;
 let myDead = false;
 let selfProtected = false;
 let respawnTimer = 0;
@@ -1485,6 +1494,11 @@ const CONTRACT_POOL: Omit<Contract, 'progress' | 'done'>[] = [
   { key: 'railKills',  desc: '磁轨炮击毁 10 台',      target: 10, reward: 100 },
   { key: 'pads',       desc: '使用弹跳板 6 次',       target: 6, reward: 50 },
   { key: 'shotgunKills', desc: '霰弹枪击毁 15 台',    target: 15, reward: 90 },
+  { key: 'drone',      desc: '击毁 15 台无人机',      target: 15, reward: 90 },
+  { key: 'tank',       desc: '击毁 4 台重装',         target: 4,  reward: 120 },
+  { key: 'boss',       desc: '击毁 1 个 BOSS',        target: 1,  reward: 180 },
+  { key: 'medic',      desc: '猎杀 3 台维修蜂',       target: 3,  reward: 120 },
+  { key: 'bomber',     desc: '拦截 8 台自爆蜂',       target: 8,  reward: 100 },
 ];
 let contracts: Contract[] = [];
 
@@ -1752,6 +1766,7 @@ function renderArmory() {
   $('achv').classList.remove('hidden');
 }
 $('btn-prog').addEventListener('click', () => { sfx.init(); renderProgression('vault'); });
+$('btn-weekly').addEventListener('click', () => { sfx.init(); startWeeklyRun(); });
 $('btn-daily').addEventListener('click', () => { sfx.init(); startDailyRun(); });
 
 // ---------- 永久仓库（跨局金币 / 武器解锁 / 词缀锻造 / 出战装配 / 元升级 / 武器精通） ----------
@@ -2104,6 +2119,7 @@ function refreshMenuMeta() {
   $('menu-xp').textContent = String(xp);
   $('menu-vault').textContent = String(vault.coins);
   refreshDailyButton();
+  refreshWeeklyButton();
 }
 refreshMenuMeta();
 
@@ -2213,6 +2229,7 @@ document.addEventListener('keydown', (e) => {
     addShake(0.3);
     sfx.swap();
   }
+  if (e.code === 'KeyV' && !myDead) castEMP();
 });
 document.addEventListener('keyup', (e) => keys.delete(e.code));
 document.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -2446,6 +2463,8 @@ function resetLocalRun() {
   coinsE = [];
   rollContracts();
   hp = stats.maxHp; regenDelay = 0; overcharge = 0;
+  ultCharge = 0; ultFreezeT = 0; lavaTick = 0;
+  updateUltUI();
   weapon = 'rifle';
   owned = ['rifle'];
   if (rank >= 6) { owned.push('smg'); ammoPool.smg = WEAPONS.smg.mag; }
@@ -2495,6 +2514,11 @@ function startGame(m: Mode, map?: number) {
   clearWorld();
   resetLocalRun();
   buildMap(m === 'solo' ? Math.floor(Math.random() * mapNames.length) : (map ?? 0));
+  // 新地图机制提示
+  if (m === 'solo') {
+    if (mapIdx === 3) setTimeout(() => toast('🌋 熔火工厂：地面熔岩会灼烧，绕行！'), 2600);
+    if (mapIdx === 4) setTimeout(() => toast('❄ 极地观测站：冰面湿滑，提前刹车！'), 2600);
+  }
 
   elMenu.classList.add('hidden');
   elOver.classList.add('hidden');
@@ -2569,21 +2593,25 @@ function gameOver(board?: { name: string; score: number; kills: number }[], titl
   commitXp();
   refreshMenuMeta();
   if (dailyActive) {
-    const b = dailyBest();
+    const wk = weeklyMode;
+    const bkey = wk ? weeklyBestKey() : dailyBestKey();
+    const b = wk ? weeklyBest() : dailyBest();
     if (score > b) {
-      localStorage.setItem(dailyBestKey(), String(score));
-      toast('📅 每日挑战新纪录！');
+      localStorage.setItem(bkey, String(score));
+      toast(wk ? '🗓 周挑战新纪录！' : '📅 每日挑战新纪录！');
     }
-    // 每日首通奖励（每天一次，直接入库）
-    const rk = `ns-daily-reward-${dailyBestKey()}`;
+    // 首通奖励（每天/每周一次，直接入库）
+    const rk = wk ? `ns-weekly-reward-${isoWeekKey()}` : `ns-daily-reward-${dailyBestKey()}`;
     if (score > 0 && !localStorage.getItem(rk)) {
       localStorage.setItem(rk, '1');
-      vault.coins += 150;
+      const rw = wk ? 400 : 150;
+      vault.coins += rw;
       saveVault();
       refreshMenuMeta();
-      toast('📅 每日首通奖励 +150◆ 已入库');
+      toast(`${wk ? '🗓 周挑战' : '📅 每日'}首通奖励 +${rw}◆ 已入库`);
     }
     dailyActive = false;
+    weeklyMode = false;
   }
   $('go-title').textContent = title;
   $('go-score').textContent = String(score);
@@ -2623,16 +2651,31 @@ function waveRoster(n: number): EnemyKind[] {
   const swarm = n >= 2 ? Math.floor(n * 1.2) : 0;
   const sentries = n >= 3 ? Math.floor((n - 1) / 2) + 1 : 0;
   const tanks = n >= 4 ? Math.floor((n - 2) / 3) : 0;
+  const medics = n >= 6 ? Math.floor((n - 4) / 4) + 1 : 0;
+  const bombers = n >= 3 ? Math.floor(n / 3) : 0;
   for (let i = 0; i < drones; i++) list.push('drone');
   for (let i = 0; i < swarm; i++) list.push('swarm');
   for (let i = 0; i < sentries; i++) list.push('sentry');
   for (let i = 0; i < tanks; i++) list.push('tank');
+  for (let i = 0; i < medics; i++) list.push('medic');
+  for (let i = 0; i < bombers; i++) list.push('bomber');
   for (let i = list.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [list[i], list[j]] = [list[j], list[i]];
   }
   if (n % 5 === 0) list.push('boss');
   return list;
+}
+
+// BOSS 变体轮换：5波核心主宰 → 10波蜂巢主宰 → 15波歼灭主宰 → 循环
+const BOSS_VARS = {
+  core: { name: '核心主宰', hp: 1.0 },
+  hive: { name: '蜂巢主宰', hp: 0.9 },
+  doom: { name: '歼灭主宰', hp: 1.15 },
+};
+function bossVarOf(n: number): 'core' | 'hive' | 'doom' {
+  const c = ((n / 5 - 1) % 3 + 3) % 3;
+  return c === 0 ? 'core' : c === 1 ? 'hive' : 'doom';
 }
 
 function startWave(n: number) {
@@ -2654,7 +2697,8 @@ function startWave(n: number) {
   if (waveMod?.id === 'horde') for (let i = 0; i < 3; i++) queue.push('swarm');
   if (dailyHas('dswarm')) for (let i = 0; i < 2; i++) queue.push('swarm');
   const isBoss = n % 5 === 0;
-  showBanner(isBoss ? `WAVE ${String(n).padStart(2, '0')} · 核心主宰来袭` : `WAVE ${String(n).padStart(2, '0')}`, isBoss);
+  const bv = BOSS_VARS[bossVarOf(n)];
+  showBanner(isBoss ? `WAVE ${String(n).padStart(2, '0')} · ${bv.name}来袭` : `WAVE ${String(n).padStart(2, '0')}`, isBoss);
   elWaveNum.textContent = `WAVE ${String(n).padStart(2, '0')}`;
   if (isBoss) sfx.bossWarn(); else sfx.wave();
   if (waveMod) setTimeout(() => toast(`⚠ ${waveMod!.label}`), 1200);
@@ -2683,6 +2727,12 @@ function spawnEnemyLocal(kind: EnemyKind) {
   const chArmor = challengeMods.includes('armor');
   const speedBoost = (waveMod?.id === 'swift' || chSwift ? 1.25 : 1) * (dailyHas('dfast') ? 1.2 : 1) * (1 + 0.2 * challengeDiff);
   const enemy = new Enemy(kind, (KIND_CFG[kind].speed + (kind === 'drone' || kind === 'swarm' ? wave * 0.12 : 0)) * speedBoost, pos);
+  if (kind === 'boss') {
+    enemy.bossVar = bossVarOf(wave);
+    const mul = BOSS_VARS[enemy.bossVar].hp;
+    enemy.hp = KIND_CFG.boss.hp * mul;
+    enemy.maxHp = enemy.hp;
+  }
   if (waveMod?.id === 'armor' || chArmor) {
     enemy.hp = KIND_CFG[kind].hp * 1.3;
   }
@@ -2767,6 +2817,9 @@ function killEnemy(en: Enemy, silentCombo = false) {
   hitStop = en.kind === 'boss' ? 0.12 : 0.05;
   dropCoins(en.position, en.kind === 'boss' ? 20 : en.kind === 'elite' ? 6 : (en.kind === 'swarm' ? 1 : 2));
   trackContract('kills');
+  // EMP 充能 + 按敌种计数的合同
+  if (mode === 'solo') { ultCharge = Math.min(100, ultCharge + 4); updateUltUI(); }
+  trackContract(en.kind);
   if (weapon === 'railgun') trackContract('railKills');
   if (weapon === 'shotgun') trackContract('shotgunKills');
   // 用当前连击结算，击杀后再递增（首杀不翻倍）
@@ -3366,7 +3419,44 @@ setInterval(() => {
 // ============================================================
 // 单机模拟
 // ============================================================
+function updateUltUI() {
+  const el = $('ult');
+  if (!el) return;
+  if (mode !== 'solo') { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.textContent = ultCharge >= 100 ? '⚡ EMP [V] 就绪' : `⚡ EMP 充能 ${Math.floor(ultCharge)}%`;
+  el.classList.toggle('ready', ultCharge >= 100);
+}
+
+function castEMP() {
+  if (mode !== 'solo' || myDead || paused) { return; }
+  if (ultCharge < 100) { sfx.empty(); toast(`⚡ EMP 充能中 ${Math.floor(ultCharge)}%`); return; }
+  ultCharge = 0;
+  ultFreezeT = 3.5;
+  sfx.explode();
+  addShake(0.6);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.8, 1.05, 48),
+    new THREE.MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.95, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(camera.position.x, 0.15, camera.position.z);
+  scene.add(ring);
+  empRings.push(ring);
+  particles.burst(camera.position.clone().setY(1), new THREE.Color(0x9fe8ff), 50, 14);
+  toast('⚡ EMP 脉冲 — 全场冻结 3.5s！');
+  for (const en of enemies) {
+    if (!en.alive) continue;
+    en.blink();
+    en.hp -= 60;
+    en.setHp01(Math.max(0, en.hp) / en.maxHp);
+    if (en.hp <= 0) killEnemy(en);
+  }
+  updateUltUI();
+}
+
 function updateSoloEnemies(dt: number) {
+  if (ultFreezeT > 0) ultFreezeT = Math.max(0, ultFreezeT - dt);
   for (let i = enemies.length - 1; i >= 0; i--) {
     const en = enemies[i];
     if (!en.alive) {
@@ -3385,6 +3475,9 @@ function updateSoloEnemies(dt: number) {
       if (Math.random() < 0.3) particles.burst(en.position, new THREE.Color(0xff7a2a), 2, 1.5);
       if (en.hp <= 0) { killEnemy(en); continue; }
     }
+
+    // EMP 冻结：全场停摆（点燃仍可灼烧，可打combo）
+    if (ultFreezeT > 0) continue;
 
     const toPlayer = new THREE.Vector3().subVectors(camera.position, en.position);
     toPlayer.y = 0;
@@ -3431,16 +3524,41 @@ function updateSoloEnemies(dt: number) {
       en.fireTimer -= dt;
       if (en.fireTimer <= 0 && dist < 32) {
         if (en.kind === 'boss') {
-          en.fireTimer = enrageMul > 1 ? 1.5 : 2.6;
-          for (let b = 0; b < 10; b++) {
-            const a = (b / 10) * Math.PI * 2 + en.bobPhase;
-            const eb = new EBullet(en.position.clone(), new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), 9);
-            ebullets.push(eb);
-            scene.add(eb.mesh);
+          if (en.bossVar === 'hive') {
+            // 蜂巢主宰：持续召唤蜂群 + 瞄准弹
+            en.fireTimer = enrageMul > 1 ? 2.6 : 4.2;
+            if (enemies.length < 26) { spawnEnemyLocal('swarm'); spawnEnemyLocal('swarm'); }
+            const eb2 = new EBullet(en.position.clone(), toPlayer.clone(), 13);
+            ebullets.push(eb2);
+            scene.add(eb2.mesh);
+          } else if (en.bossVar === 'doom') {
+            // 歼灭主宰：双层旋转弹幕，节奏更快
+            en.fireTimer = enrageMul > 1 ? 1.0 : 1.7;
+            const nB = enrageMul > 1 ? 14 : 10;
+            for (let b = 0; b < nB; b++) {
+              const a = (b / nB) * Math.PI * 2 + en.bobPhase * 1.7;
+              const eb = new EBullet(en.position.clone(), new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), 7);
+              ebullets.push(eb);
+              scene.add(eb.mesh);
+            }
+            for (let b = 0; b < nB; b++) {
+              const a = (b / nB) * Math.PI * 2 - en.bobPhase * 1.7 + Math.PI / nB;
+              const eb = new EBullet(en.position.clone(), new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), 7);
+              ebullets.push(eb);
+              scene.add(eb.mesh);
+            }
+          } else {
+            en.fireTimer = enrageMul > 1 ? 1.5 : 2.6;
+            for (let b = 0; b < 10; b++) {
+              const a = (b / 10) * Math.PI * 2 + en.bobPhase;
+              const eb = new EBullet(en.position.clone(), new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), 9);
+              ebullets.push(eb);
+              scene.add(eb.mesh);
+            }
+            const eb2 = new EBullet(en.position.clone(), toPlayer.clone(), 13);
+            ebullets.push(eb2);
+            scene.add(eb2.mesh);
           }
-          const eb2 = new EBullet(en.position.clone(), toPlayer.clone(), 13);
-          ebullets.push(eb2);
-          scene.add(eb2.mesh);
         } else {
           en.fireTimer = en.kind === 'elite'
             ? Math.max(1.6 - wave * 0.04, 0.9)
@@ -3476,6 +3594,44 @@ function updateSoloEnemies(dt: number) {
         en.position.addScaledVector(toPlayer, en.speed * (frenzyT > 0 ? 1.35 : 1) * dt);
       }
       en.position.y = 1.3 + Math.sin(en.bobPhase) * 0.2;
+    } else if (en.kind === 'medic') {
+      // 维修蜂：保持中距环绕，周期治疗附近友军（优先残血）
+      const keep = 16;
+      const move = new THREE.Vector3();
+      if (dist > keep + 3) move.add(toPlayer);
+      else if (dist < keep - 4) move.sub(toPlayer);
+      move.add(new THREE.Vector3(-toPlayer.z, 0, toPlayer.x).multiplyScalar(en.strafeDir * 0.8));
+      if (move.lengthSq() > 0) move.normalize();
+      en.position.addScaledVector(move, KIND_CFG.medic.speed * dt);
+      en.position.y = 2.2 + Math.sin(en.bobPhase) * 0.3;
+      en.fireTimer -= dt;
+      if (en.fireTimer <= 0) {
+        en.fireTimer = 2.2;
+        let healed = 0;
+        for (const o of enemies) {
+          if (o === en || !o.alive || o.hp >= o.maxHp) continue;
+          if (o.position.distanceTo(en.position) < 10) {
+            o.hp = Math.min(o.maxHp, o.hp + 18);
+            o.setHp01(o.hp / o.maxHp);
+            o.blink();
+            if (++healed >= 3) break;
+          }
+        }
+        if (healed > 0) particles.burst(en.position, new THREE.Color(0x7dffce), 8, 3);
+      }
+    } else if (en.kind === 'bomber') {
+      // 自爆蜂：全速冲脸，近距离闪烁预警后自爆
+      en.position.addScaledVector(toPlayer, en.speed * (frenzyT > 0 ? 1.35 : 1) * dt);
+      en.position.y = 1.2 + Math.sin(en.bobPhase) * 0.25;
+      if (dist < 6) en.blink();
+      if (dist < 1.9 && !myDead) {
+        en.alive = false;
+        damagePlayer(30, en.position);
+        addShake(0.7);
+        sfx.explode();
+        particles.burst(en.position, new THREE.Color(0xff6a00), 60, 9);
+        continue;
+      }
     } else {
       en.position.addScaledVector(toPlayer, en.speed * (frenzyT > 0 ? 1.35 : 1) * dt);
       en.position.y = 1.45 + Math.sin(en.bobPhase) * 0.35;
@@ -3698,11 +3854,13 @@ function movePlayer(dt: number) {
 
   const sprinting = (keys.has('ShiftLeft') || keys.has('ShiftRight')) && !aiming;
   const maxSpeed = (sprinting ? 11 : (aiming ? 4 : 7.2)) * stats.speedMul;
-  const accel = grounded ? 60 : 15;
+  // 极地观测站：冰面湿滑（低阻尼+低加速，有滑行惯性）
+  const ice = mode === 'solo' && mapIdx === 4;
+  const accel = grounded ? (ice ? 42 : 60) : 15;
   playerVel.x += wish.x * accel * dt;
   playerVel.z += wish.z * accel * dt;
 
-  const damp = Math.exp(-(grounded ? 10 : 2) * dt);
+  const damp = Math.exp(-(grounded ? (ice ? 3.4 : 10) : 2) * dt);
   playerVel.x *= damp;
   playerVel.z *= damp;
   const hSpeed = Math.hypot(playerVel.x, playerVel.z);
@@ -3763,6 +3921,14 @@ function movePlayer(dt: number) {
   if (grounded && hSpeed > 1) {
     bobPhase += dt * hSpeed * 1.4;
     camera.position.y = EYE_HEIGHT + Math.sin(bobPhase) * 0.045;
+  }
+
+  // 熔火工厂：踩中地面熔岩持续灼烧
+  if (mode === 'solo' && mapIdx === 3 && grounded) {
+    if (LAVA_SPOTS.some(([lx, lz]) => Math.hypot(camera.position.x - lx, camera.position.z - lz) < 1.7)) {
+      lavaTick -= dt;
+      if (lavaTick <= 0) { lavaTick = 0.5; damagePlayer(7, camera.position); }
+    }
   }
 }
 
@@ -3912,6 +4078,14 @@ function animate() {
   for (const g of fxPadGlows) {
     (g.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.0 + Math.sin(performance.now() * 0.005) * 0.5;
   }
+  // EMP 冲击环扩散
+  for (let i = empRings.length - 1; i >= 0; i--) {
+    const r = empRings[i];
+    r.scale.addScalar(dt * 26);
+    const m = r.material as THREE.MeshBasicMaterial;
+    m.opacity -= dt * 0.8;
+    if (m.opacity <= 0) { scene.remove(r); disposeObj(r); empRings.splice(i, 1); }
+  }
   updateHusks(dt);
   updateBeams(dt);
 
@@ -3993,6 +4167,7 @@ const DAILY_MODS_POOL = [
 ];
 let dailyActive = false;
 let pendingDaily = false;
+let weeklyMode = false; // 本局为周挑战（与每日共用 dailyActive/词条通道）
 let dailyMods: string[] = [];
 function dailyHas(id: string) { return dailyActive && dailyMods.includes(id); }
 function dailyBestKey() { return `ns-daily-${new Date().toISOString().slice(0, 10)}`; }
@@ -4002,8 +4177,43 @@ function refreshDailyButton() {
   const tag = localStorage.getItem(`ns-daily-reward-${dailyBestKey()}`) ? '' : ' · 首通 +150◆';
   $('btn-daily').textContent = b > 0 ? `📅 每日挑战 · 今日最佳 ${b}${tag}` : `📅 每日挑战${tag}`;
 }
+// ISO 周编号（周一为一周开始）
+function isoWeekKey() {
+  const d = new Date();
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round(((date.getTime() - firstThursday.getTime()) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+function weeklyBestKey() { return `ns-weekly-${isoWeekKey()}`; }
+function weeklyBest() { return Number(localStorage.getItem(weeklyBestKey()) ?? 0); }
+function refreshWeeklyButton() {
+  const b = weeklyBest();
+  const tag = localStorage.getItem(`ns-weekly-reward-${isoWeekKey()}`) ? '' : ' · 首通 +400◆';
+  $('btn-weekly').textContent = b > 0 ? `🗓 周挑战 · 本周最佳 ${b}${tag}` : `🗓 周挑战${tag}`;
+}
+function startWeeklyRun() {
+  pendingDaily = true;
+  weeklyMode = true;
+  soloMode = 'endless';
+  document.querySelectorAll('.mode-chip').forEach((m) => m.classList.toggle('sel', (m as HTMLElement).dataset.mode === 'endless'));
+  // 周种子：由 ISO 周号派生，保证全周固定
+  let seed = 0;
+  for (const ch of isoWeekKey()) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+  const rng = mulberry32(seed);
+  const map = Math.floor(rng() * mapNames.length);
+  const pool = [...DAILY_MODS_POOL];
+  dailyMods = [];
+  for (let i = 0; i < 3; i++) dailyMods.push(pool.splice(Math.floor(rng() * pool.length), 1)[0].id);
+  startGame('solo', map);
+  const names = dailyMods.map((id) => DAILY_MODS_POOL.find((x) => x.id === id)!.name).join(' + ');
+  setTimeout(() => toast(`🗓 周挑战：${names} · 首通奖励翻倍`), 1600);
+}
 function startDailyRun() {
   pendingDaily = true;
+  weeklyMode = false;
   soloMode = 'endless';
   document.querySelectorAll('.mode-chip').forEach((m) => m.classList.toggle('sel', (m as HTMLElement).dataset.mode === 'endless'));
   const now = new Date();
